@@ -306,25 +306,6 @@
     del: (path) => apiRequest('DELETE', path)
   };
 
-  // Bridges the existing local-account login to the real server so protected
-  // endpoints (prediction generation, recommendations, medicine CRUD) have a
-  // valid session token. Failure here is non-fatal: medicine browsing and
-  // read-only data still work, but AI generation/CRUD will surface a clear
-  // "server login failed" error instead of silently doing nothing.
-  async function bridgeRealLogin(username, password) {
-    try {
-      const result = await api.post('/api/login', { username, password });
-      if (result && result.token) {
-        setRealAuthToken(result.token);
-        return true;
-      }
-    } catch (err) {
-      console.warn('[PharmaCast] Real server login failed, AI features will be unavailable:', err.message);
-      setRealAuthToken(null);
-    }
-    return false;
-  }
-
   /** Converts a real /api/medicines row into the shape the existing UI code expects. */
   function normalizeServerMedicine(row) {
     return {
@@ -832,12 +813,19 @@
     }
   }
 
-  function updatePendingCountBadge() {
+  // Fire-and-forget on purpose (called from updateNavbarState(), which runs
+  // synchronously in many places) - reads the real pending-user count from
+  // the server instead of the old fake local request queue.
+  async function updatePendingCountBadge() {
     const badge = document.getElementById('admin-pending-badge');
-    const count = getRequests().filter(r => r.status === 'Pending').length;
-    if (badge) {
+    if (!badge) return;
+    try {
+      const allUsers = await api.get('/api/users');
+      const count = allUsers.filter(u => u.status === 'pending').length;
       badge.textContent = count;
       badge.style.display = count > 0 ? 'inline-block' : 'none';
+    } catch (err) {
+      // Non-fatal - leave the badge as-is if the server can't be reached.
     }
   }
 
@@ -1179,19 +1167,28 @@
   }
 
   // ─── ADMIN DASHBOARD & TRUE ANALYTICS CHART ("all graph must be true") ───
-  function renderAdminDashboard() {
-    // 1. Update 4 Stat Cards
-    const usersCount = getUsers().length;
-    const pendingCount = getRequests().filter(r => r.status === 'Pending').length;
+  async function renderAdminDashboard() {
+    // 1. Update 4 Stat Cards - users/pending now come from the real backend;
+    // medicines already does (synced via syncMedicinesFromServer()).
     const medsCount = getMedicines().length;
     const filesCount = getSalesFiles().length;
 
     const statEls = document.querySelectorAll('#page-admin-dashboard .stat-card-luxury h3');
     if (statEls.length >= 4) {
-      statEls[0].textContent = usersCount;
-      statEls[1].textContent = pendingCount;
       statEls[2].textContent = medsCount;
       statEls[3].textContent = filesCount;
+    }
+
+    try {
+      const allUsers = await api.get('/api/users');
+      const usersCount = allUsers.length;
+      const pendingCount = allUsers.filter(u => u.status === 'pending').length;
+      if (statEls.length >= 4) {
+        statEls[0].textContent = usersCount;
+        statEls[1].textContent = pendingCount;
+      }
+    } catch (err) {
+      console.warn('[PharmaCast] Could not load user stats from server:', err.message);
     }
 
     // 2. Render Platform-Wide True AI Analytics Chart
@@ -1286,11 +1283,22 @@
   }
 
   // ─── 7. ADMIN REGISTRATION APPROVALS WORKFLOW ───
-  function renderPendingApprovalsTable() {
+  // Pending registrations now come straight from the real users table
+  // (GET /api/users, filtered to status='pending') instead of a separate
+  // fake local request queue - approve/reject act directly on that same row.
+  async function renderPendingApprovalsTable() {
     const tbody = document.getElementById('admin-approvals-tbody');
     if (!tbody) return;
 
-    const reqs = getRequests();
+    let allUsers;
+    try {
+      allUsers = await api.get('/api/users');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Could not load registrations from server: ${err.message}</td></tr>`;
+      return;
+    }
+
+    const reqs = allUsers.filter(u => u.status === 'pending');
     tbody.innerHTML = '';
 
     if (reqs.length === 0) {
@@ -1299,29 +1307,23 @@
     }
 
     reqs.forEach((r) => {
-      let statusBadge = `<span class="badge bg-warning text-dark">${r.status}</span>`;
-      if (r.status === 'Approved') statusBadge = `<span class="badge bg-success">${r.status}</span>`;
-      if (r.status === 'Rejected') statusBadge = `<span class="badge bg-danger">${r.status}</span>`;
-
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><strong class="text-dark">${r.id}</strong></td>
-        <td>${r.fullName}</td>
+        <td><strong class="text-dark">${r.user_id}</strong></td>
+        <td>${r.full_name || ''}</td>
         <td>${r.email}</td>
-        <td>${r.contactNumber}</td>
-        <td><code class="text-dark">${r.username}</code></td>
-        <td>${r.submittedAt}</td>
+        <td>${r.phone || ''}</td>
+        <td><code class="text-dark">${r.username}</code> <span class="badge bg-light text-dark border">${r.role}</span></td>
+        <td>${(r.created_at || '').split(' ')[0]}</td>
         <td>
-          ${r.status === 'Pending' ? `
-            <div class="d-flex gap-2">
-              <button class="btn btn-sm btn-luxury-primary py-1 px-3" onclick="window.PharmaCastApp.approveRequest('${r.id}')">
-                <i class="bi bi-check-circle-fill"></i> Approve
-              </button>
-              <button class="btn btn-sm btn-outline-danger py-1 px-3" onclick="window.PharmaCastApp.showRejectModal('${r.id}')">
-                <i class="bi bi-x-circle-fill"></i> Reject
-              </button>
-            </div>
-          ` : statusBadge}
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-luxury-primary py-1 px-3" onclick="window.PharmaCastApp.approveRequest(${r.user_id})">
+              <i class="bi bi-check-circle-fill"></i> Approve
+            </button>
+            <button class="btn btn-sm btn-outline-danger py-1 px-3" onclick="window.PharmaCastApp.showRejectModal(${r.user_id})">
+              <i class="bi bi-x-circle-fill"></i> Reject
+            </button>
+          </div>
         </td>
       `;
       tbody.appendChild(tr);
@@ -1330,57 +1332,38 @@
     updatePendingCountBadge();
   }
 
-  function approveRequest(reqId) {
-    const reqs = getRequests();
-    const idx = reqs.findIndex(r => r.id === reqId);
-    if (idx === -1) return;
-
-    const req = reqs[idx];
-    req.status = 'Approved';
-
-    // Add user to active users list
-    const users = getUsers();
-    const exists = users.find(u => u.username === req.username);
-    if (!exists) {
-      users.push({
-        id: `USR-${Date.now()}`,
-        username: req.username,
-        password: req.password,
-        fullName: req.fullName,
-        email: req.email,
-        contactNumber: req.contactNumber,
-        role: "Pharmacist",
-        status: "Active",
-        createdAt: new Date().toISOString().split('T')[0]
-      });
-      setUsers(users);
+  async function approveRequest(userId) {
+    try {
+      await api.put(`/api/users/${userId}/approve`);
+      renderPendingApprovalsTable();
+      updatePendingCountBadge();
+      if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+      showToastNotification(`User account #${userId} has been approved and activated!`, "success");
+    } catch (err) {
+      showToastNotification(`Could not approve: ${err.message}`, "error");
     }
-
-    setRequests(reqs);
-    renderPendingApprovalsTable();
-    showToastNotification(`Account for ${req.fullName} (${req.username}) has been approved and activated!`, "success");
   }
 
   let selectedRejectId = null;
-  function showRejectModal(reqId) {
-    selectedRejectId = reqId;
+  function showRejectModal(userId) {
+    selectedRejectId = userId;
     document.getElementById('reject-reason-input').value = '';
     const modal = document.getElementById('modal-reject-reason');
     if (modal) modal.classList.add('show');
   }
 
-  function confirmRejectRequest() {
+  async function confirmRejectRequest() {
     if (!selectedRejectId) return;
     const reason = document.getElementById('reject-reason-input').value.trim() || "Does not meet Sri Lanka pharmacy licensing verification.";
 
-    const reqs = getRequests();
-    const idx = reqs.findIndex(r => r.id === selectedRejectId);
-    if (idx !== -1) {
-      reqs[idx].status = 'Rejected';
-      reqs[idx].rejectionReason = reason;
-      setRequests(reqs);
+    try {
+      await api.put(`/api/users/${selectedRejectId}/reject`, { reason });
       renderPendingApprovalsTable();
+      updatePendingCountBadge();
+      if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
       showToastNotification(`Registration request rejected. Reason: ${reason}`, "warning");
+    } catch (err) {
+      showToastNotification(`Could not reject: ${err.message}`, "error");
     }
 
     closeRejectModal();
@@ -1984,8 +1967,8 @@
     if (modal) modal.classList.add('show');
   }
 
-  // Saves to the real backend (POST/PUT /api/medicines) - requires an admin
-  // session token from bridgeRealLogin(). Falls back to a local-only save
+  // Saves to the real backend (POST/PUT /api/medicines) - requires the admin
+  // session token obtained at login. Falls back to a local-only save
   // (old behavior) if the server call fails, so the form never silently loses
   // the admin's input.
   async function saveMedicineForm(e) {
@@ -2057,6 +2040,13 @@
   }
 
   // ─── 10. AUTHENTICATION, REGISTRATION & 5-ATTEMPT LOCKOUT ───
+  // Authenticates against the real backend (bcrypt password check, role,
+  // pending/rejected status, and the 5-attempt/30-minute lockout are all
+  // enforced server-side in routes/auth.routes.js). The old client-side-only
+  // localStorage lockout has been retired - it was trivially bypassed by
+  // clearing localStorage and was the root cause of an earlier "admin can't
+  // log in" incident, since it could lock an account the server itself
+  // considered fine.
   async function handleLoginSubmit(e) {
     e.preventDefault();
     const usernameVal = document.getElementById('login-username').value.trim();
@@ -2065,45 +2055,26 @@
 
     if (errorEl) errorEl.style.display = 'none';
 
-    // Check 5-attempt lockout
-    const lockoutState = JSON.parse(localStorage.getItem('pc_failed_attempts') || '{"count":0,"lockoutUntil":0}');
-    const now = Date.now();
-    if (lockoutState.lockoutUntil > now) {
-      const remainingMin = Math.ceil((lockoutState.lockoutUntil - now) / 60000);
-      showLoginError(`Account temporarily locked due to 5 consecutive failed login attempts. Please try again in ${remainingMin} minutes.`);
+    let result;
+    try {
+      result = await api.post('/api/login', { username: usernameVal, password: passwordVal });
+    } catch (err) {
+      showLoginError(err.message || 'Invalid username or password');
       return;
     }
 
-    // Check users
-    const users = getUsers();
-    const foundUser = users.find(u => ((u.username && u.username.toLowerCase() === usernameVal.toLowerCase()) || (u.email && u.email.toLowerCase() === usernameVal.toLowerCase())) && u.password === passwordVal);
+    setRealAuthToken(result.token);
 
-    if (!foundUser) {
-      lockoutState.count = (lockoutState.count || 0) + 1;
-      if (lockoutState.count >= 5) {
-        lockoutState.lockoutUntil = now + 30 * 60 * 1000; // 30 minutes
-        showLoginError(`Account locked for 30 minutes due to 5 consecutive failed login attempts.`);
-      } else {
-        showLoginError(`Invalid username or password. Attempt ${lockoutState.count} of 5 before 30-minute lockout.`);
-      }
-      localStorage.setItem('pc_failed_attempts', JSON.stringify(lockoutState));
-      return;
-    }
-
-    // Check if account is Pending or Rejected
-    if (foundUser.status === 'Pending') {
-      showLoginError("Your registration request is currently pending Admin approval.");
-      return;
-    }
-    if (foundUser.status === 'Rejected') {
-      showLoginError("Your account registration was rejected by the Administrator.");
-      return;
-    }
-
-    // Success -> Reset failed attempts
-    localStorage.setItem('pc_failed_attempts', JSON.stringify({ count: 0, lockoutUntil: 0 }));
-
-    currentUser = foundUser;
+    currentUser = {
+      id: result.user_id,
+      username: result.username,
+      email: result.email,
+      role: result.role,
+      fullName: result.full_name || result.name || result.username,
+      contactNumber: result.phone,
+      pharmacyName: result.pharmacy_name,
+      status: result.status
+    };
     sessionStorage.setItem('pc_current_user', JSON.stringify(currentUser));
     sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
     localStorage.setItem('pc_current_user', JSON.stringify(currentUser));
@@ -2111,7 +2082,7 @@
     updateNavbarState();
     startInactivityTimer();
 
-    showToastNotification(`Welcome back, ${currentUser.fullName || currentUser.name || currentUser.username}!`, "success");
+    showToastNotification(`Welcome back, ${currentUser.fullName}!`, "success");
 
     if (isUserAdminRole(currentUser)) {
       showPage('page-admin-dashboard');
@@ -2119,20 +2090,11 @@
       showPage('page-pharmacist-dashboard');
     }
 
-    // Obtain a real server session (needed for AI prediction generation and
-    // medicine CRUD) and refresh the medicine catalog from the live database.
-    // Non-fatal if it fails - see bridgeRealLogin().
-    const gotRealSession = await bridgeRealLogin(usernameVal, passwordVal);
-    if (!gotRealSession) {
-      showToastNotification(
-        "Signed in, but couldn't reach the PharmaCast server for AI features - predictions/recommendations may be unavailable.",
-        "warning"
-      );
-    }
     await syncMedicinesFromServer();
     if (isUserAdminRole(currentUser)) {
       renderAdminDashboard();
       if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+      if (typeof renderPendingApprovalsTable === 'function') renderPendingApprovalsTable();
     } else {
       renderPharmacistDashboard();
     }
@@ -2146,7 +2108,7 @@
     }
   }
 
-  function handleRegisterSubmit(e) {
+  async function handleRegisterSubmit(e) {
     e.preventDefault();
     const fullNameVal = document.getElementById('reg-fullname').value.trim();
     const emailVal = document.getElementById('reg-email').value.trim();
@@ -2194,53 +2156,28 @@
       return;
     }
 
-    // Check duplicate username or email
-    const users = getUsers();
-    const reqs = getRequests();
-    if (users.some(u => u.username === usernameVal || u.email === emailVal) ||
-        reqs.some(r => r.username === usernameVal || r.email === emailVal)) {
-      showRegisterError("An account with this Username or Email already exists.");
-      return;
-    }
-
     const roleEl = document.getElementById('reg-role');
-    const selectedRole = roleEl ? roleEl.value : "Pharmacist";
+    const selectedRole = (roleEl ? roleEl.value : "Pharmacist").toLowerCase();
 
-    if (selectedRole === "Admin") {
-      const newAdminUser = {
-        id: `USR-${Date.now()}`,
+    // Per the SRS, admin approval is mandatory for every new account -
+    // including admin signups - so both roles go into the same real pending
+    // queue on the server; there is no instant self-activation anymore.
+    // (The backend re-validates everything authoritatively, including
+    // duplicate username/email and the 2+ word full-name rule, so its error
+    // message is shown directly if it disagrees with the quick checks above.)
+    try {
+      await api.post('/api/register', {
+        full_name: fullNameVal,
+        email: emailVal,
+        phone: contactVal,
         username: usernameVal,
         password: passwordVal,
-        fullName: fullNameVal,
-        email: emailVal,
-        contactNumber: contactVal,
-        role: "Admin",
-        status: "Active",
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      users.push(newAdminUser);
-      setUsers(users);
-
-      currentUser = newAdminUser;
-      sessionStorage.setItem('pc_current_user', JSON.stringify(newAdminUser));
-      updateNavbarState();
-      showPage('page-admin-dashboard');
-      showToastNotification(`✓ Administrator Account "${usernameVal}" created successfully! You are now logged in.`, "success");
+        role: selectedRole
+      });
+    } catch (err) {
+      showRegisterError(err.message || 'Registration failed. Please try again.');
       return;
     }
-
-    // Submit pending registration request for Pharmacist
-    reqs.unshift({
-      id: `REQ-${Date.now()}`,
-      fullName: fullNameVal,
-      email: emailVal,
-      contactNumber: contactVal,
-      username: usernameVal,
-      password: passwordVal,
-      status: "Pending",
-      submittedAt: new Date().toISOString().split('T')[0]
-    });
-    setRequests(reqs);
 
     // Show luxury modal
     const modal = document.getElementById('modal-registration-success');
