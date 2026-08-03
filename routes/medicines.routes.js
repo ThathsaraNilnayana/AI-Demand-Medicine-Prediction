@@ -1,0 +1,107 @@
+const express = require('express');
+const { body } = require('express-validator');
+const db = require('../db');
+const { validate } = require('../middleware/validate');
+const { requireAuth, requireRole } = require('../middleware/auth');
+const { computeAlertStatus } = require('../utils/stockStatus');
+
+const router = express.Router();
+
+const medicineValidators = [
+    body('medicine_name').trim().notEmpty().withMessage('Medicine name is required'),
+    body('unit_price').isFloat({ min: 0 }).withMessage('Unit price must be a positive number'),
+    body('reorder_level').optional().isInt({ min: 0 }).withMessage('Reorder level must be a non-negative integer'),
+    body('current_stock').optional().isInt({ min: 0 }).withMessage('Current stock must be a non-negative integer')
+];
+
+// GET all medicines, with optional case-insensitive partial-name search (FR20)
+// Response shape unchanged: array of rows with .stock/.alert_status joined in.
+router.get('/', async (req, res, next) => {
+    try {
+        const { search } = req.query;
+        let rows;
+        if (search && search.trim()) {
+            rows = await db.all(`
+                SELECT m.*, sl.quantity as stock, sl.alert_status
+                FROM medicines m
+                LEFT JOIN stock_levels sl ON m.medicine_id = sl.medicine_id
+                WHERE m.medicine_name LIKE ? COLLATE NOCASE
+                LIMIT 50
+            `, [`%${search.trim()}%`]);
+        } else {
+            rows = await db.all(`
+                SELECT m.*, sl.quantity as stock, sl.alert_status
+                FROM medicines m
+                LEFT JOIN stock_levels sl ON m.medicine_id = sl.medicine_id
+            `);
+        }
+        res.json(rows);
+    } catch (err) { next(err); }
+});
+
+router.get('/:id', async (req, res, next) => {
+    try {
+        const row = await db.get(`
+            SELECT m.*, sl.quantity as stock, sl.alert_status
+            FROM medicines m
+            LEFT JOIN stock_levels sl ON m.medicine_id = sl.medicine_id
+            WHERE m.medicine_id = ?
+        `, [req.params.id]);
+        if (!row) return res.status(404).json({ error: 'Medicine not found' });
+        res.json(row);
+    } catch (err) { next(err); }
+});
+
+router.post('/', requireAuth, requireRole('admin'), medicineValidators, validate, async (req, res, next) => {
+    try {
+        const { medicine_name, generic_name, category, unit_price, reorder_level, current_stock } = req.body;
+
+        const result = await db.run(`
+            INSERT INTO medicines (medicine_name, generic_name, category, unit_price, reorder_level, current_stock)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `, [medicine_name, generic_name, category, unit_price, reorder_level || 0, current_stock || 0]);
+
+        const qty = current_stock || 0;
+        const reorder = reorder_level || 0;
+        await db.run(`
+            INSERT INTO stock_levels (medicine_id, quantity, reorder_level, alert_status)
+            VALUES (?, ?, ?, ?)
+        `, [result.lastID, qty, reorder, computeAlertStatus(qty, reorder)]);
+
+        res.json({ id: result.lastID, message: 'Medicine added successfully' });
+    } catch (err) { next(err); }
+});
+
+router.put('/:id', requireAuth, requireRole('admin'), medicineValidators, validate, async (req, res, next) => {
+    try {
+        const { medicine_name, generic_name, category, unit_price, reorder_level, current_stock } = req.body;
+
+        const result = await db.run(`
+            UPDATE medicines
+            SET medicine_name=?, generic_name=?, category=?, unit_price=?, reorder_level=?, current_stock=?
+            WHERE medicine_id = ?
+        `, [medicine_name, generic_name, category, unit_price, reorder_level, current_stock, req.params.id]);
+
+        if (result.changes === 0) return res.status(404).json({ error: 'Medicine not found' });
+
+        if (current_stock !== undefined) {
+            const status = computeAlertStatus(current_stock, reorder_level);
+            await db.run(`
+                UPDATE stock_levels SET quantity = ?, reorder_level = ?, alert_status = ?, last_updated = CURRENT_TIMESTAMP
+                WHERE medicine_id = ?
+            `, [current_stock, reorder_level, status, req.params.id]);
+        }
+
+        res.json({ message: 'Medicine updated successfully' });
+    } catch (err) { next(err); }
+});
+
+router.delete('/:id', requireAuth, requireRole('admin'), async (req, res, next) => {
+    try {
+        const result = await db.run('DELETE FROM medicines WHERE medicine_id = ?', [req.params.id]);
+        if (result.changes === 0) return res.status(404).json({ error: 'Medicine not found' });
+        res.json({ message: 'Medicine deleted successfully' });
+    } catch (err) { next(err); }
+});
+
+module.exports = router;

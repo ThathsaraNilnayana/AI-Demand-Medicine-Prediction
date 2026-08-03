@@ -1,0 +1,1008 @@
+/* ==========================================================================
+   PharmaCast — AI-Based Medicine Demand Prediction System
+   Luxury Natural Medicine / Botanical Clinical Pharmacy Theme (Sri Lanka)
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  /* ─── Botanical Luxury Color Palette ─── */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f0fdf4;
+  --bg-card: #ffffff;
+  --bg-card-hover: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.88);
+  --bg-glass-dark: rgba(15, 23, 42, 0.85);
+
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+
+  --emerald-primary: #059669;
+  --emerald-hover: #047857;
+  --emerald-light: #d1fae5;
+  --emerald-dark: #064e3b;
+
+  --botanical-sage: #34d399;
+  --botanical-mint: #a7f3d0;
+  --botanical-teal: #0d9488;
+
+  --medical-blue: #0284c7;
+  --medical-blue-light: #e0f2fe;
+
+  --luxury-gold: #d4af37;
+  --luxury-gold-light: #fef9c3;
+  --luxury-gold-dark: #854d0e;
+
+  /* ─── Color-Coded Stock Status Badges ─── */
+  --badge-green-bg: #d1fae5;
+  --badge-green-text: #065f46;
+  --badge-green-border: #10b981;
+
+  --badge-yellow-bg: #fef3c7;
+  --badge-yellow-text: #92400e;
+  --badge-yellow-border: #f59e0b;
+
+  --badge-red-bg: #fee2e2;
+  --badge-red-text: #991b1b;
+  --badge-red-border: #ef4444;
+
+  /* ─── Demand Shading Colors (Chart.js) ─── */
+  --chart-zone-low: rgba(209, 250, 229, 0.45);      /* Green zone */
+  --chart-zone-mod: rgba(254, 243, 199, 0.45);      /* Yellow zone */
+  --chart-zone-high: rgba(254, 226, 226, 0.55);     /* Red zone */
+
+  /* ─── Shadows & Borders ─── */
+  --shadow-sm: 0 4px 12px -2px rgba(16, 185, 129, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 10px 25px -5px rgba(16, 185, 129, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 20px 40px -10px rgba(16, 185, 129, 0.12), 0 10px 15px -5px rgba(0, 0, 0, 0.04);
+  --shadow-gold: 0 10px 30px -5px rgba(212, 175, 55, 0.25);
+  
+  --border-subtle: #e2e8f0;
+  --border-emerald: rgba(16, 185, 129, 0.25);
+  --border-gold: rgba(212, 175, 55, 0.4);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-full: 9999px;
+
+  --transition-smooth: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Reset & Base Settings ─── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+
+/* ─── Animated Botanical Background Aurora ─── */
+.botanical-aurora-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background: radial-gradient(circle at 10% 20%, rgba(209, 250, 229, 0.7) 0%, transparent 40%),
+              radial-gradient(circle at 90% 80%, rgba(224, 242, 254, 0.6) 0%, transparent 40%),
+              radial-gradient(circle at 50% 50%, rgba(254, 249, 195, 0.35) 0%, transparent 50%);
+}
+
+.botanical-aurora-bg::before,
+.botanical-aurora-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.55;
+  animation: auroraFloat 16s ease-in-out infinite alternate;
+}
+
+.botanical-aurora-bg::before {
+  width: 550px;
+  height: 550px;
+  background: radial-gradient(circle, #34d399 0%, transparent 70%);
+  top: -120px;
+  left: -80px;
+}
+
+.botanical-aurora-bg::after {
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, #38bdf8 0%, transparent 70%);
+  bottom: -100px;
+  right: -60px;
+  animation-duration: 20s;
+  animation-delay: -5s;
+}
+
+@keyframes auroraFloat {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(60px, 40px) scale(1.1); }
+  100% { transform: translate(-40px, -30px) scale(0.95); }
+}
+
+/* ─── Luxury Navigation Bar ─── */
+.navbar-luxury {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-emerald);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding: 12px 0;
+  box-shadow: 0 4px 20px -5px rgba(5, 150, 105, 0.08);
+  transition: var(--transition-smooth);
+}
+
+.navbar-brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.logo-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--emerald-primary), var(--emerald-dark));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 22px;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  transition: var(--transition-smooth);
+}
+
+.navbar-brand-logo:hover .logo-icon-box {
+  transform: rotate(-6deg) scale(1.06);
+  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.45);
+}
+
+.logo-text {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--emerald-dark);
+  letter-spacing: -0.03em;
+}
+
+.logo-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--luxury-gold-dark);
+  background: var(--luxury-gold-light);
+  border: 1px solid var(--border-gold);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  margin-left: 8px;
+}
+
+/* ─── Navigation Links & Buttons ─── */
+.nav-link-item {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  transition: var(--transition-smooth);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.nav-link-item:hover, .nav-link-item.active {
+  color: var(--emerald-primary);
+  background: var(--emerald-light);
+}
+
+.btn-luxury-primary {
+  background: linear-gradient(135deg, var(--emerald-primary), var(--emerald-dark));
+  color: #ffffff !important;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 10px 24px;
+  border-radius: var(--radius-full);
+  border: none;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.28);
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-luxury-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(5, 150, 105, 0.4);
+  background: linear-gradient(135deg, var(--emerald-hover), #022c22);
+  color: #ffffff;
+}
+
+.btn-luxury-outline {
+  background: #ffffff;
+  color: var(--emerald-dark) !important;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 10px 24px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--emerald-primary);
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-luxury-outline:hover {
+  background: var(--emerald-light);
+  border-color: var(--emerald-hover);
+  transform: translateY(-2px);
+}
+
+.btn-luxury-gold {
+  background: linear-gradient(135deg, #d4af37, #f59e0b);
+  color: #ffffff !important;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 10px 24px;
+  border-radius: var(--radius-full);
+  border: none;
+  box-shadow: var(--shadow-gold);
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.btn-luxury-gold:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 14px 28px rgba(212, 175, 55, 0.4);
+}
+
+/* ─── Card Styles & Glassmorphism ─── */
+.card-luxury {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-smooth);
+  overflow: hidden;
+  position: relative;
+}
+
+.card-luxury:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-emerald);
+}
+
+.card-luxury-gold {
+  background: linear-gradient(145deg, #ffffff, #fffbeb);
+  border: 1.5px solid var(--border-gold);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-gold);
+  position: relative;
+  overflow: hidden;
+}
+
+.card-luxury-gold::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.15) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ─── Stat Counter Cards ─── */
+.stat-card-luxury {
+  padding: 24px;
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: var(--transition-smooth);
+}
+
+.stat-card-luxury:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.stat-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+
+.stat-icon-emerald {
+  background: var(--emerald-light);
+  color: var(--emerald-dark);
+}
+
+.stat-icon-yellow {
+  background: var(--badge-yellow-bg);
+  color: var(--badge-yellow-text);
+}
+
+.stat-icon-red {
+  background: var(--badge-red-bg);
+  color: var(--badge-red-text);
+}
+
+.stat-icon-blue {
+  background: var(--medical-blue-light);
+  color: var(--medical-blue);
+}
+
+/* ─── Color-Coded Stock Status Badges ─── */
+.badge-stock-green {
+  background-color: var(--badge-green-bg);
+  color: var(--badge-green-text);
+  border: 1px solid var(--badge-green-border);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-stock-yellow {
+  background-color: var(--badge-yellow-bg);
+  color: var(--badge-yellow-text);
+  border: 1px solid var(--badge-yellow-border);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-stock-red {
+  background-color: var(--badge-red-bg);
+  color: var(--badge-red-text);
+  border: 1px solid var(--badge-red-border);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  animation: pulseRedBadge 2s infinite;
+}
+
+@keyframes pulseRedBadge {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+/* ─── Prominent Search Bars ─── */
+.search-container-luxury {
+  position: relative;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.search-input-luxury {
+  width: 100%;
+  padding: 18px 24px 18px 56px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--border-subtle);
+  background: #ffffff;
+  color: var(--text-main);
+  font-size: 1.05rem;
+  font-family: 'Inter', sans-serif;
+  box-shadow: var(--shadow-md);
+  transition: var(--transition-smooth);
+  outline: none;
+}
+
+.search-input-luxury:focus {
+  border-color: var(--emerald-primary);
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.15), var(--shadow-lg);
+}
+
+.search-icon-luxury {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 22px;
+  color: var(--emerald-primary);
+  pointer-events: none;
+}
+
+.search-dropdown-luxury {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  max-height: 380px;
+  overflow-y: auto;
+  display: none;
+}
+
+.search-dropdown-item {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.search-dropdown-item:hover {
+  background: var(--emerald-light);
+}
+
+/* ─── Hero Section ─── */
+.hero-luxury {
+  padding: 60px 0 80px;
+  text-align: center;
+  position: relative;
+}
+
+.hero-title {
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, var(--emerald-dark) 0%, var(--emerald-primary) 50%, var(--medical-blue) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-subtitle {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  max-width: 720px;
+  margin: 0 auto 36px;
+  font-weight: 400;
+}
+
+/* ─── Tables (Admin & Inventory) ─── */
+.table-luxury {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 10px;
+}
+
+.table-luxury thead th {
+  background-color: var(--bg-secondary);
+  color: var(--emerald-dark);
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--border-emerald);
+  text-align: left;
+}
+
+.table-luxury tbody tr {
+  transition: background-color 0.2s;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.table-luxury tbody tr:hover {
+  background-color: var(--emerald-light);
+}
+
+.table-luxury tbody td {
+  padding: 16px 18px;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ─── Chart Container & Background Shading Guide ─── */
+.chart-card-container {
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.chart-legend-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+  padding: 12px 18px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 6px;
+}
+
+/* ─── Recommendation Pill Box ─── */
+.recommendation-box {
+  background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+  border: 2px solid #10b981;
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  box-shadow: 0 12px 30px -5px rgba(16, 185, 129, 0.18);
+}
+
+.rec-number-display {
+  font-family: 'Outfit', sans-serif;
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: var(--emerald-dark);
+  line-height: 1;
+}
+
+.rec-confidence-badge {
+  background: var(--luxury-gold-light);
+  color: var(--luxury-gold-dark);
+  border: 1px solid var(--border-gold);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ─── Page Transitions & Micro-Animations ─── */
+.page-view {
+  display: none;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+}
+
+.page-view.active-page {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Loading Spinner (Medical Pulse) ─── */
+.medical-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--emerald-light);
+  border-top-color: var(--emerald-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Custom Modal Glass styling ─── */
+.modal-backdrop-luxury {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 1050;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-backdrop-luxury.show {
+  display: flex;
+}
+
+.modal-content-luxury {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  max-width: 540px;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  animation: modalPopIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPopIn {
+  0% { opacity: 0; transform: scale(0.92) translateY(15px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ─── Quick Demo / Test User Switcher Pill ─── */
+.demo-switcher-pill {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-full);
+  padding: 8px 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(10px);
+}
+
+.demo-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: none;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.demo-btn:hover {
+  background: var(--emerald-primary);
+}
+
+/* Responsive Grid Adjustments */
+@media (max-width: 768px) {
+  .hero-title { font-size: 2.2rem; }
+  .rec-number-display { font-size: 2.2rem; }
+  .demo-switcher-pill { bottom: 10px; right: 10px; font-size: 0.68rem; }
+}
+
+/* ==========================================================================
+   PHARMACAST LUXURY ANIMATION & VISUAL EXCELLENCE SUITE
+   ========================================================================== */
+
+/* ─── 1. Ambient Floating Botanical Particles ─── */
+.ambient-particles-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ambient-particle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(2px);
+  animation: ambientDrift 14s infinite ease-in-out alternate;
+}
+
+@keyframes ambientDrift {
+  0% {
+    opacity: 0.15;
+    transform: translate(0, 0) scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 0.55;
+    transform: translate(45px, -35px) scale(1.2) rotate(180deg);
+  }
+  100% {
+    opacity: 0.25;
+    transform: translate(-30px, -70px) scale(0.9) rotate(360deg);
+  }
+}
+
+/* ─── 2. Interactive Cursor Glow Aura ─── */
+.cursor-glow-aura {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.14) 0%, rgba(212, 175, 55, 0.05) 45%, transparent 70%);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  filter: blur(30px);
+  transition: width 0.35s ease, height 0.35s ease, background 0.35s ease;
+  will-change: transform;
+}
+
+.cursor-glow-aura.hovering {
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.22) 0%, rgba(16, 185, 129, 0.12) 50%, transparent 75%);
+}
+
+/* ─── 3. Shimmering Hero Heading Text & Badge Reflection ─── */
+.hero-title-shimmer {
+  background: linear-gradient(135deg, var(--emerald-dark) 0%, #059669 25%, #34d399 50%, #d4af37 75%, var(--emerald-dark) 100%);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientTextFlow 7s ease infinite;
+  display: inline-block;
+}
+
+@keyframes gradientTextFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.badge-shimmer {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+}
+
+.badge-shimmer::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -150%;
+  width: 60%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+  transform: rotate(25deg);
+  animation: shineSweep 4.5s infinite ease-in-out;
+}
+
+@keyframes shineSweep {
+  0%, 75% { left: -150%; }
+  100% { left: 200%; }
+}
+
+/* ─── 4. Enhanced 3D Tilt Feature Cards & Spring Icons ─── */
+.card-luxury {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.4s ease,
+              background 0.4s ease !important;
+  will-change: transform, box-shadow;
+}
+
+.card-luxury:hover {
+  transform: translateY(-9px) scale(1.018) !important;
+  box-shadow: 0 22px 40px -10px rgba(5, 150, 105, 0.18),
+              0 0 25px rgba(212, 175, 55, 0.12) !important;
+  border-color: var(--botanical-sage) !important;
+}
+
+.card-luxury:hover .stat-card-icon,
+.stat-card-luxury:hover .stat-card-icon {
+  transform: scale(1.18) rotate(-8deg);
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.stat-card-icon {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── 5. Staggered Cascading Page Entrance Animations ─── */
+@keyframes cascadeSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: cascadeSlideUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.12s; }
+.stagger-3 { animation-delay: 0.19s; }
+.stagger-4 { animation-delay: 0.26s; }
+.stagger-5 { animation-delay: 0.33s; }
+.stagger-6 { animation-delay: 0.40s; }
+.stagger-7 { animation-delay: 0.47s; }
+
+/* ─── 6. Interactive Button Click Ripple & Breathing Halos ─── */
+.btn, .nav-link-item, .card-luxury {
+  position: relative;
+  overflow: hidden;
+}
+
+.click-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(0);
+  animation: rippleExpand 0.6s linear;
+  pointer-events: none;
+  z-index: 10;
+}
+
+@keyframes rippleExpand {
+  to {
+    transform: scale(4.5);
+    opacity: 0;
+  }
+}
+
+.btn-luxury-primary {
+  animation: primaryButtonPulse 3.5s infinite alternate ease-in-out;
+}
+
+@keyframes primaryButtonPulse {
+  0% {
+    box-shadow: 0 4px 14px rgba(5, 150, 105, 0.28);
+  }
+  100% {
+    box-shadow: 0 10px 26px rgba(5, 150, 105, 0.55),
+                0 0 18px rgba(52, 211, 153, 0.4);
+  }
+}
+
+/* ─── 7. Live Status Concentric Beacon Dots ─── */
+.live-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--emerald-primary);
+  position: relative;
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.live-pulse-dot::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 50%;
+  background: var(--emerald-primary);
+  animation: beaconRingPulse 1.8s infinite cubic-bezier(0.24, 0, 0.38, 1);
+}
+
+.live-pulse-dot.pulse-amber {
+  background: #f59e0b;
+}
+
+.live-pulse-dot.pulse-amber::after {
+  background: #f59e0b;
+}
+
+.live-pulse-dot.pulse-red {
+  background: #ef4444;
+}
+
+.live-pulse-dot.pulse-red::after {
+  background: #ef4444;
+}
+
+@keyframes beaconRingPulse {
+  0% { transform: scale(1); opacity: 0.85; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+
+/* ─── 8. Interactive Table Row Glide & Emerald Border Accent ─── */
+tbody tr {
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  border-left: 3px solid transparent;
+}
+
+tbody tr:hover {
+  transform: translateX(6px);
+  background-color: var(--emerald-light) !important;
+  border-left-color: var(--emerald-primary) !important;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.08);
+}
+
+/* ─── 9. Input & Search Glow Aura ─── */
+.form-control:focus,
+.form-select:focus,
+input[type="text"]:focus,
+input[type="search"]:focus {
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.18),
+              0 0 18px rgba(5, 150, 105, 0.22) !important;
+  border-color: var(--emerald-primary) !important;
+  transform: scale(1.006);
+  transition: all 0.25s ease;
+}
+
+/* ─── 10. Glowing Monsoon Epidemic Banner Animation ─── */
+.monsoon-alert-banner {
+  animation: monsoonGlowPulse 4s infinite alternate ease-in-out;
+  border: 1.5px solid rgba(212, 175, 55, 0.4);
+}
+
+@keyframes monsoonGlowPulse {
+  0% {
+    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.12);
+  }
+  100% {
+    box-shadow: 0 10px 28px rgba(212, 175, 55, 0.35),
+                0 0 16px rgba(16, 185, 129, 0.2);
+  }
+}
+

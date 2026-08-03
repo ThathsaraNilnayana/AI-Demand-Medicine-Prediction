@@ -1,0 +1,30 @@
+(node:28396) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+🚀 PharmaCast API Server running on http://localhost:3000
+📍 Database: pharmacast.db
+
+📚 Available endpoints:
+   POST /api/register
+   POST /api/login
+   POST /api/logout
+   GET  /api/session
+   GET    /api/medicines?search=
+   POST   /api/medicines
+   PUT    /api/medicines/:id
+   DELETE /api/medicines/:id
+   GET  /api/stock
+   PUT  /api/stock/:medicineId
+   GET  /api/sales/:medicineId
+   POST /api/sales
+   POST /api/sales/upload  (multipart 'file' field, admin only)
+   GET  /api/predictions[/:medicineId]
+   POST /api/predictions/generate/:medicineId  (runs ML engine)
+   GET  /api/recommendations/:medicineId
+   GET  /api/users
+   PUT  /api/users/:id/approve
+   PUT  /api/users/:id/reject
+   DELETE /api/users/:id  (reject)
+   GET  /api/stats
+
+✅ Connected to SQLite database
