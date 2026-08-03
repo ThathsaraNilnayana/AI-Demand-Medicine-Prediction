@@ -5,7 +5,9 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const router = express.Router();
 
 // GET all users (password hash excluded) - unchanged shape, now includes full_name/phone
-router.get('/', async (req, res, next) => {
+// Admin-only: this lists every user's email/phone/pharmacy name, so it must not
+// be reachable by an unauthenticated caller or a non-admin role.
+router.get('/', requireAuth, requireRole('admin'), async (req, res, next) => {
     try {
         const rows = await db.all(`
             SELECT user_id, username, email, role, full_name, phone, pharmacy_name, status, created_at

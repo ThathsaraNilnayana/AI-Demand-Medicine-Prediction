@@ -89,6 +89,11 @@ Recommended_Order = MAX(0, Predicted_Demand + Safety_Stock − Current_Stock)
 
 ## Sales data format
 
+Both Admin and Pharmacist accounts can upload historical sales data
+(`POST /api/sales/upload`); every imported row is tagged with the uploading
+user's ID (`recorded_by`) for audit purposes. Admin retains sole access to
+approvals, user management, and medicine record management.
+
 CSV or XLSX, with these columns (header names are matched case-insensitively):
 
 | Column | Format | Example |

@@ -56,6 +56,7 @@
           <a class="nav-link-item" onclick="window.PharmaCastApp.focusSearchInput()"><i class="bi bi-search"></i> Search Medicines</a>
           <a class="nav-link-item" onclick="window.PharmaCastApp.openMedicineDetail('MED-101')"><i class="bi bi-graph-up-arrow"></i> AI Demand Graphs</a>
           <a class="nav-link-item" onclick="window.PharmaCastApp.openMedicineDetail('MED-101')"><i class="bi bi-box-seam-fill"></i> Stock Recommendations</a>
+          <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-admin-upload')"><i class="bi bi-cloud-arrow-up-fill"></i> Upload Sales Data</a>
           <button class="btn btn-sm btn-luxury-outline ms-2" onclick="window.PharmaCastApp.handleLogout()">
             <i class="bi bi-box-arrow-right"></i> Logout
           </button>
@@ -856,8 +857,8 @@
           <h2 class="font-heading text-dark mb-1"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i> Upload / Manage Historical Sales Data</h2>
           <p class="text-muted small mb-0">Required CSV Columns: <code>Date (YYYY-MM-DD)</code>, <code>Medicine Name</code>, <code>Quantity Sold</code></p>
         </div>
-        <button class="btn btn-sm btn-luxury-outline" onclick="window.PharmaCastApp.showPage('page-admin-dashboard')">
-          <i class="bi bi-arrow-left"></i> Back to Admin Hub
+        <button class="btn btn-sm btn-luxury-outline" onclick="window.PharmaCastApp.goBackFromUpload()">
+          <i class="bi bi-arrow-left"></i> Back
         </button>
       </div>
 

@@ -61,7 +61,9 @@ router.post('/',
 
 // ==================== BULK SALES DATA UPLOAD (FR24-27) ====================
 // CSV/XLSX with columns: Date, Medicine Name (or medicine_id), Quantity
-router.post('/upload', requireAuth, requireRole('admin'), upload.single('file'), async (req, res, next) => {
+// Both Admin and Pharmacist may upload historical sales data; recorded_by
+// (req.user.id) tracks who actually submitted each batch either way.
+router.post('/upload', requireAuth, requireRole('admin', 'pharmacist'), upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const cleanup = () => fs.unlink(req.file.path, () => {});

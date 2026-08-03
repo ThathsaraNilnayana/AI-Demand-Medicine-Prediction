@@ -48,7 +48,7 @@ app.listen(config.port, () => {
     console.log(`   PUT  /api/stock/:medicineId`);
     console.log(`   GET  /api/sales/:medicineId`);
     console.log(`   POST /api/sales`);
-    console.log(`   POST /api/sales/upload  (multipart 'file' field, admin only)`);
+    console.log(`   POST /api/sales/upload  (multipart 'file' field, admin or pharmacist)`);
     console.log(`   GET  /api/predictions[/:medicineId]`);
     console.log(`   POST /api/predictions/generate/:medicineId  (runs ML engine)`);
     console.log(`   GET  /api/recommendations/:medicineId`);

@@ -791,16 +791,20 @@
   // back to their own dashboard with an error (SRS role-based access control).
   // Note this is a UX guard only - every admin API route is independently
   // protected server-side by requireRole('admin'), which is the real defence.
+  // page-admin-upload is intentionally NOT in this list: both Admin and
+  // Pharmacist may upload sales datasets (server-side: requireRole('admin','pharmacist')).
   const ADMIN_ONLY_PAGES = [
     'page-admin-dashboard',
     'page-admin-approvals',
-    'page-admin-upload',
     'page-admin-medicines',
     'page-admin-users'
   ];
 
   function showPage(pageId) {
-    if (ADMIN_ONLY_PAGES.includes(pageId) && !isUserAdminRole(currentUser)) {
+    if (pageId === 'page-admin-upload' && !currentUser) {
+      showToastNotification("Please log in to upload sales data.", "error");
+      pageId = 'page-home';
+    } else if (ADMIN_ONLY_PAGES.includes(pageId) && !isUserAdminRole(currentUser)) {
       showToastNotification("Access denied: that area is restricted to administrators.", "error");
       pageId = currentUser ? 'page-pharmacist-dashboard' : 'page-home';
     }
@@ -831,6 +835,12 @@
     } else if (pageId === 'page-admin-medicines') {
       renderManageMedicinesTable();
     }
+  }
+
+  // The upload page is shared by both roles now, so its "Back" button can't
+  // hard-code a destination - route each role to its own dashboard.
+  function goBackFromUpload() {
+    showPage(isUserAdminRole(currentUser) ? 'page-admin-dashboard' : 'page-pharmacist-dashboard');
   }
 
   function updateNavbarState() {
@@ -2553,6 +2563,7 @@
   // ─── 13. EXPOSE PUBLIC APPLICATION API ───
   window.PharmaCastApp = {
     showPage,
+    goBackFromUpload,
     focusSearchInput,
     openMedicineDetail,
     placeRecommendedOrder,
