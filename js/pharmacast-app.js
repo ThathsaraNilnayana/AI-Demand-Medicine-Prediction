@@ -261,6 +261,143 @@
     return roleStr.includes('admin') || u.username === 'admin' || u.email === 'admin@pharmacast.com' || u.email === 'admin@pharmacast.lk';
   }
 
+  // ─── REAL BACKEND API CLIENT ───
+  // The rest of this app still runs its UI state off localStorage (pc_medicines,
+  // pc_users, etc.) for now, but medicine data and AI predictions/recommendations
+  // are synced from the real Express/SQLite/Python backend so the ML pipeline is
+  // no longer simulated in the browser.
+  function getRealAuthToken() {
+    return sessionStorage.getItem('pc_real_token') || null;
+  }
+  function setRealAuthToken(token) {
+    if (token) sessionStorage.setItem('pc_real_token', token);
+    else sessionStorage.removeItem('pc_real_token');
+  }
+
+  async function apiRequest(method, path, body) {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = getRealAuthToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    let res;
+    try {
+      res = await fetch(path, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
+    } catch (networkErr) {
+      throw new Error('Cannot reach the PharmaCast server. Is `node server.js` running on this machine?');
+    }
+
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* empty/non-JSON body */ }
+
+    if (!res.ok) {
+      throw new Error(data.error || `Request failed (${res.status})`);
+    }
+    return data;
+  }
+
+  const api = {
+    get: (path) => apiRequest('GET', path),
+    post: (path, body) => apiRequest('POST', path, body),
+    put: (path, body) => apiRequest('PUT', path, body),
+    del: (path) => apiRequest('DELETE', path)
+  };
+
+  // Bridges the existing local-account login to the real server so protected
+  // endpoints (prediction generation, recommendations, medicine CRUD) have a
+  // valid session token. Failure here is non-fatal: medicine browsing and
+  // read-only data still work, but AI generation/CRUD will surface a clear
+  // "server login failed" error instead of silently doing nothing.
+  async function bridgeRealLogin(username, password) {
+    try {
+      const result = await api.post('/api/login', { username, password });
+      if (result && result.token) {
+        setRealAuthToken(result.token);
+        return true;
+      }
+    } catch (err) {
+      console.warn('[PharmaCast] Real server login failed, AI features will be unavailable:', err.message);
+      setRealAuthToken(null);
+    }
+    return false;
+  }
+
+  /** Converts a real /api/medicines row into the shape the existing UI code expects. */
+  function normalizeServerMedicine(row) {
+    return {
+      id: String(row.medicine_id),
+      name: row.medicine_name,
+      category: row.category || 'Other',
+      description: row.generic_name || row.category || '',
+      stock: row.stock != null ? row.stock : 0,
+      unitPriceLKR: row.unit_price,
+      reorderLevel: row.reorder_level,
+      alertStatus: row.alert_status,
+      lastUpdated: (row.created_at || '').split(' ')[0].split('T')[0]
+    };
+  }
+
+  /** Re-fetches medicines from the real backend and overwrites the local cache
+   *  that every existing render function already reads via getMedicines(). */
+  async function syncMedicinesFromServer() {
+    try {
+      const rows = await api.get('/api/medicines');
+      const normalized = rows.map(normalizeServerMedicine);
+      setMedicines(normalized);
+      return normalized;
+    } catch (err) {
+      console.warn('[PharmaCast] Could not load medicines from server, falling back to cached/local data:', err.message);
+      return getMedicines();
+    }
+  }
+
+  function formatMonthLabel(yyyyMm) {
+    const [y, m] = String(yyyyMm).slice(0, 7).split('-').map(Number);
+    if (!y || !m) return String(yyyyMm);
+    return `${MONTH_NAMES[m - 1].slice(0, 3)} ${y}`;
+  }
+
+  /** Aggregates raw /api/sales/:id rows into up to the last 12 monthly totals,
+   *  oldest first, for the chart's "Actual Historical Sales" reference line. */
+  function aggregateLast12MonthlyTotals(saleRows) {
+    const totals = new Map();
+    for (const row of saleRows) {
+      const key = String(row.sale_date).slice(0, 7);
+      totals.set(key, (totals.get(key) || 0) + Number(row.quantity_sold || 0));
+    }
+    const months = Array.from(totals.keys()).sort();
+    const last12 = months.slice(-12);
+    return last12.map((m) => Math.round(totals.get(m)));
+  }
+
+  /** Converts the real backend's prediction shape into the object
+   *  renderPredictionChart() / the diagnostics panel already know how to render
+   *  (same field names computeDemandPrediction() used to produce locally). */
+  function adaptServerPrediction(forecast, modelType, historicalRef) {
+    const predicted = forecast.map((f) => f.predicted_demand);
+    const months = forecast.map((f) => formatMonthLabel(f.month));
+    const averagePredicted = Math.round(predicted.reduce((a, b) => a + b, 0) / (predicted.length || 1));
+    const avgConfidence = forecast.reduce((a, f) => a + (f.confidence_score || 0), 0) / (forecast.length || 1);
+
+    return {
+      status: "SUCCESS",
+      modelName: modelType || "AI Forecast Model",
+      months,
+      predicted,
+      historicalRef: historicalRef && historicalRef.length ? historicalRef : predicted.map(() => null),
+      averagePredicted,
+      rSquare: `${(avgConfidence * 100).toFixed(1)}%`,
+      rmse: "See confidence score",
+      equation: `${modelType || 'AI model'} fit on real historical sales_data`,
+      trendSlope: "N/A (data-driven model)",
+      monsoonFactor: "N/A (data-driven model)",
+      phi: "N/A"
+    };
+  }
+
   // Session & Inactivity state
   let currentUser = JSON.parse(sessionStorage.getItem('pc_current_user') || sessionStorage.getItem('currentUser') || localStorage.getItem('pc_current_user') || localStorage.getItem('currentUser') || 'null');
   let lastActivityTime = Date.now();
@@ -751,7 +888,7 @@
             <p class="text-muted small mb-3">${m.description}</p>
           </div>
           <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-            <span class="small text-muted">History: <strong>${m.historyMonths} months</strong></span>
+            <span class="small text-muted">History: <strong>${m.historyMonths != null ? m.historyMonths : '—'} months</strong></span>
             <button class="btn btn-sm btn-luxury-outline py-1 px-3">
               View AI Graph <i class="bi bi-graph-up-arrow"></i>
             </button>
@@ -859,7 +996,11 @@
   }
 
   // ─── 6. MEDICINE DETAIL PAGE WITH ML PREDICTION & STOCK RECOMMENDATION ───
-  function openMedicineDetail(medId) {
+  // Fetches (generating on first view if needed) the real AI prediction +
+  // recommendation for `med.id` from the Node/SQLite/Python backend. Only
+  // medicines synced from the server (numeric id) have matching sales_data
+  // rows to predict from - see the isRealMedicine check below.
+  async function openMedicineDetail(medId) {
     const meds = getMedicines();
     const med = meds.find(m => m.id === medId) || meds[0];
     currentDetailMedId = med.id;
@@ -885,7 +1026,6 @@
       stockBadgeEl.innerHTML = `<span class="badge-stock-green" style="font-size:0.95rem; padding:6px 16px;"><i class="bi bi-check-circle-fill"></i> In Stock (${med.stock} Units)</span>`;
     }
 
-    // Show high-tech loading spinner for 500ms
     const loaderEl = document.getElementById('prediction-loading-spinner');
     const contentEl = document.getElementById('prediction-content-area');
     const insuffBanner = document.getElementById('insufficient-data-banner');
@@ -894,92 +1034,148 @@
     if (contentEl) contentEl.style.display = 'none';
     if (insuffBanner) insuffBanner.style.display = 'none';
 
-    setTimeout(() => {
+    const showInsufficientBanner = (message) => {
       if (loaderEl) loaderEl.style.display = 'none';
-
-      const prediction = computeDemandPrediction(med);
-
-      if (prediction.status === "INSUFFICIENT_DATA") {
-        if (insuffBanner) {
-          insuffBanner.innerHTML = `
-            <div class="alert alert-warning d-flex align-items-center p-4 border-2" style="background:#fef3c7; border-color:#f59e0b; border-radius:16px;">
-              <i class="bi bi-exclamation-triangle-fill fs-3 text-warning me-3"></i>
-              <div>
-                <h5 class="font-heading mb-1 text-dark">Insufficient Data for AI Prediction</h5>
-                <p class="mb-0 text-dark">${prediction.message}</p>
-              </div>
+      if (contentEl) contentEl.style.display = 'none';
+      if (insuffBanner) {
+        insuffBanner.innerHTML = `
+          <div class="alert alert-warning d-flex align-items-center p-4 border-2" style="background:#fef3c7; border-color:#f59e0b; border-radius:16px;">
+            <i class="bi bi-exclamation-triangle-fill fs-3 text-warning me-3"></i>
+            <div>
+              <h5 class="font-heading mb-1 text-dark">Insufficient Data for AI Prediction</h5>
+              <p class="mb-0 text-dark">${message}</p>
             </div>
-          `;
-          insuffBanner.style.display = 'block';
+          </div>
+        `;
+        insuffBanner.style.display = 'block';
+      }
+    };
+
+    // Only medicines synced from the server (numeric id) have a matching
+    // medicine_id in the real database for the ML engine to query sales_data for.
+    if (!/^\d+$/.test(String(med.id))) {
+      showInsufficientBanner("This record only exists in the local demo cache (no server connection when it was added), so there's no historical sales_data for the AI engine to analyze. Log in as admin and re-add it via Manage Medicines while online.");
+      return;
+    }
+
+    let forecast, modelType;
+    try {
+      const existingRows = await api.get(`/api/predictions/${med.id}`);
+      if (Array.isArray(existingRows) && existingRows.length > 0) {
+        const sorted = existingRows.slice().sort((a, b) => a.prediction_month.localeCompare(b.prediction_month));
+        forecast = sorted.map(r => ({ month: r.prediction_month, predicted_demand: r.predicted_demand, confidence_score: r.confidence_score }));
+        modelType = sorted[0].model_type;
+      } else {
+        // Nothing generated yet for this medicine - run the pipeline now.
+        // Uses a raw fetch (not the shared `api` helper) so a 422
+        // insufficient-data response body can be read instead of thrown away.
+        const token = getRealAuthToken();
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`/api/predictions/generate/${med.id}`, { method: 'POST', headers });
+        const body = await res.json().catch(() => ({}));
+
+        if (res.status === 422 || body.status === 'insufficient_data') {
+          showInsufficientBanner(
+            body.error ||
+            `This medicine only has ${body.months_available || 0} month(s) of sales history; at least ${body.minimum_required || 6} are needed for an AI forecast.`
+          );
+          return;
         }
-        if (contentEl) contentEl.style.display = 'none';
-        return;
+        if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+
+        forecast = body.predictions.map(p => ({ month: p.month, predicted_demand: p.predicted_demand, confidence_score: p.confidence_score }));
+        modelType = body.model_type;
+      }
+    } catch (err) {
+      if (loaderEl) loaderEl.style.display = 'none';
+      showInsufficientBanner(`Could not reach the AI prediction engine: ${err.message}`);
+      return;
+    }
+
+    // Best-effort real historical reference line (chart still renders fine without it).
+    let historicalRef = [];
+    try {
+      const saleRows = await api.get(`/api/sales/${med.id}`);
+      historicalRef = aggregateLast12MonthlyTotals(saleRows);
+    } catch (err) {
+      console.warn('[PharmaCast] Could not load sales history for chart reference line:', err.message);
+    }
+
+    if (loaderEl) loaderEl.style.display = 'none';
+    if (contentEl) contentEl.style.display = 'block';
+
+    const prediction = adaptServerPrediction(forecast, modelType, historicalRef);
+
+    document.getElementById('detail-model-name').textContent = prediction.modelName;
+    document.getElementById('detail-model-rsquare').textContent = `Confidence: ${prediction.rSquare}`;
+
+    const eqEl = document.getElementById('diag-eq');
+    const trendEl = document.getElementById('diag-trend');
+    const rsqEl = document.getElementById('diag-rsquare');
+    const rmseEl = document.getElementById('diag-rmse');
+    const monsEl = document.getElementById('diag-monsoon');
+
+    if (eqEl) eqEl.textContent = prediction.equation;
+    if (trendEl) trendEl.textContent = prediction.trendSlope;
+    if (rsqEl) rsqEl.textContent = prediction.rSquare;
+    if (rmseEl) rmseEl.textContent = prediction.rmse;
+    if (monsEl) monsEl.textContent = prediction.monsoonFactor;
+
+    renderPredictionChart('predictionChartCanvas', prediction);
+
+    // Fetch & display the real Stock Recommendation (FR32-35).
+    try {
+      const rec = await api.get(`/api/recommendations/${med.id}`);
+      const gapOrSurplus = rec.current_stock - rec.required_quantity; // negative = deficit, matches prior UI convention
+
+      document.getElementById('rec-order-quantity').textContent = `${rec.recommended_order_qty} Packs`;
+      document.getElementById('rec-next-demand').textContent = `${rec.predicted_demand} Packs`;
+      document.getElementById('rec-current-stock').textContent = `${rec.current_stock} Packs`;
+
+      const gapEl = document.getElementById('rec-gap-surplus');
+      if (gapOrSurplus < 0) {
+        gapEl.textContent = `${gapOrSurplus} Packs (Deficit)`;
+        gapEl.style.color = '#991b1b';
+      } else {
+        gapEl.textContent = `+${gapOrSurplus} Packs (Surplus)`;
+        gapEl.style.color = '#065f46';
       }
 
-      if (contentEl) contentEl.style.display = 'block';
-
-      // Set model badge and diagnostics
-      document.getElementById('detail-model-name').textContent = prediction.modelName;
-      document.getElementById('detail-model-rsquare').textContent = `Confidence: ${prediction.rSquare}`;
-
-      const eqEl = document.getElementById('diag-eq');
-      const trendEl = document.getElementById('diag-trend');
-      const rsqEl = document.getElementById('diag-rsquare');
-      const rmseEl = document.getElementById('diag-rmse');
-      const monsEl = document.getElementById('diag-monsoon');
-
-      if (eqEl) eqEl.textContent = prediction.equation || "y(t) = 184.2 + 4.82·t + S(m)";
-      if (trendEl) trendEl.textContent = prediction.trendSlope || "+0.00 packs/mo";
-      if (rsqEl) rsqEl.textContent = prediction.rSquare || "96.4%";
-      if (rmseEl) rmseEl.textContent = prediction.rmse || "±11.8 packs";
-      if (monsEl) monsEl.textContent = prediction.monsoonFactor || "1.35x (SW Monsoon)";
-
-      // Render Chart.js
-      renderPredictionChart('predictionChartCanvas', prediction);
-
-      // Compute & display Stock Recommendation
-      const rec = computeRecommendation(med, prediction);
-      if (rec) {
-        document.getElementById('rec-order-quantity').textContent = `${rec.recommendedOrder} Packs`;
-        document.getElementById('rec-next-demand').textContent = `${rec.predictedDemand} Packs`;
-        document.getElementById('rec-current-stock').textContent = `${rec.currentStock} Packs`;
-
-        const gapEl = document.getElementById('rec-gap-surplus');
-        if (rec.gapOrSurplus < 0) {
-          gapEl.textContent = `${rec.gapOrSurplus} Packs (Deficit)`;
-          gapEl.style.color = '#991b1b';
-        } else {
-          gapEl.textContent = `+${rec.gapOrSurplus} Packs (Surplus)`;
-          gapEl.style.color = '#065f46';
-        }
-
-        document.getElementById('rec-suggested-date').textContent = "August 1, 2026";
-        document.getElementById('rec-estimated-cost').textContent = `LKR ${rec.estimatedCost.toLocaleString()}`;
-        document.getElementById('rec-confidence-percentage').textContent = `${rec.confidence} Model Fit`;
-        document.getElementById('rec-plain-english-explanation').textContent = rec.explanation;
-      }
-    }, 500);
+      const nextMonth = new Date();
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      document.getElementById('rec-suggested-date').textContent = nextMonth.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      document.getElementById('rec-estimated-cost').textContent = `LKR ${Number(rec.estimated_cost).toLocaleString()}`;
+      document.getElementById('rec-confidence-percentage').textContent = `${Math.round((rec.confidence_score || 0) * 100)}% Model Fit`;
+      document.getElementById('rec-plain-english-explanation').textContent =
+        `Based on ${prediction.modelName} trained on this medicine's real historical sales data, next month's demand is forecast at ${rec.predicted_demand} packs. ` +
+        `With a 20% safety buffer (+${rec.safety_stock} packs), required inventory is ${rec.required_quantity} packs against a current stock of ${rec.current_stock} packs. ` +
+        `Recommended order: ${rec.recommended_order_qty} packs.`;
+    } catch (err) {
+      document.getElementById('rec-plain-english-explanation').textContent = `Recommendation unavailable: ${err.message}`;
+    }
   }
 
-  // Simulate Order Placement with Supplier
-  function placeRecommendedOrder() {
+  // Real order-placement simulation (no supplier-ordering backend exists yet,
+  // so this still just confirms via toast) - now driven by the live recommendation.
+  async function placeRecommendedOrder() {
     const meds = getMedicines();
     const med = meds.find(m => m.id === currentDetailMedId);
     if (!med) return;
 
-    const prediction = computeDemandPrediction(med);
-    const rec = computeRecommendation(med, prediction);
-    if (!rec) return;
-
-    if (rec.recommendedOrder === 0) {
-      showToastNotification(`Current inventory (${med.stock} packs) is already sufficient! No re-order needed.`, "info");
-      return;
+    try {
+      const rec = await api.get(`/api/recommendations/${med.id}`);
+      if (!rec.recommended_order_qty || rec.recommended_order_qty === 0) {
+        showToastNotification(`Current inventory (${med.stock} packs) is already sufficient! No re-order needed.`, "info");
+        return;
+      }
+      showToastNotification(
+        `✓ Order for ${rec.recommended_order_qty} packs of ${med.name} placed with Sri Lanka Pharma Supplier! Estimated Cost: LKR ${Number(rec.estimated_cost).toLocaleString()}`,
+        "success"
+      );
+    } catch (err) {
+      showToastNotification(`Could not place order: ${err.message}`, "error");
     }
-
-    showToastNotification(
-      `✓ Order for ${rec.recommendedOrder} packs of ${med.name} placed with Sri Lanka Pharma Supplier! Estimated Cost: LKR ${rec.estimatedCost.toLocaleString()}`,
-      "success"
-    );
   }
 
   // ─── ADMIN DASHBOARD & TRUE ANALYTICS CHART ("all graph must be true") ───
@@ -1617,7 +1813,12 @@
   }
 
   let aiTrainingInterval = null;
-  function trainModelWithDataset() {
+  // Real "Run ML Forecast Pipeline" - sequentially calls the actual backend
+  // (POST /api/predictions/generate/:id, which in turn spawns ml/predict.py)
+  // for every server-backed medicine, logging genuine per-medicine results
+  // instead of a canned/fake terminal animation.
+  let aiTrainingCancelled = false;
+  async function trainModelWithDataset() {
     const modal = document.getElementById('modal-ai-training');
     const term = document.getElementById('ai-training-terminal');
     const bar = document.getElementById('ai-training-progress-bar');
@@ -1630,99 +1831,75 @@
     finishBtn.style.display = 'none';
     bar.style.width = '0%';
     bar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-success';
+    aiTrainingCancelled = false;
 
-    const rawCustomRecords = localStorage.getItem('pharmacast_custom_dataset_records');
-    let customRecords = [];
-    if (rawCustomRecords) {
-      try { customRecords = JSON.parse(rawCustomRecords); } catch (e) { customRecords = []; }
-    }
-
-    const meds = getMedicines();
-
-    if (customRecords && customRecords.length > 0) {
-      const groupedByMed = {};
-      customRecords.forEach(rec => {
-        const key = (rec.medName || rec.medId || "").trim().toLowerCase();
-        if (!groupedByMed[key]) groupedByMed[key] = [];
-        groupedByMed[key].push(rec.qty || rec.quantity || 100);
-      });
-
-      meds.forEach(med => {
-        const medKey = med.name.trim().toLowerCase();
-        const medIdKey = med.id.trim().toLowerCase();
-        const matchedKey = Object.keys(groupedByMed).find(k => medKey.includes(k) || k.includes(medKey) || k === medIdKey);
-        if (matchedKey && groupedByMed[matchedKey].length >= 6) {
-          med.monthlySalesHistory = groupedByMed[matchedKey].slice(0, 36);
-        }
-      });
-    }
-
-    const trainedResults = meds.map(med => {
-      const pred = computeDemandPrediction(med);
-      const rec = computeRecommendation(med, pred);
-      return { med, pred, rec };
-    });
-
-    const steps = [
-      { p: 15, msg: `> [00:01] Ingested dataset across ${meds.length} Sri Lanka pharmacy SKUs (${customRecords.length > 0 ? customRecords.length + ' custom records' : '360 historical monthly records'})...` },
-      { p: 35, msg: `> [00:02] Fitting Ordinary Least Squares (OLS) Trend: MED-101 (Panadol) slope = ${trainedResults[0] ? trainedResults[0].pred.trendSlope : '+4.82 packs/mo'} | MED-104 (Metformin) slope = ${trainedResults[3] ? trainedResults[3].pred.trendSlope : '+5.10 packs/mo'}...` },
-      { p: 60, msg: `> [00:03] Extracting STL Seasonal Monsoon Ratios: MED-102 (Piriton) SW Monsoon Factor = ${trainedResults[1] ? trainedResults[1].pred.monsoonFactor : '1.34x (SW Monsoon Peak)'}...` },
-      { p: 85, msg: `> [00:04] Fitting SARIMA (1,0,1)(0,1,1)₁₂ Autoregressive Residuals (AR-1 φ) & computing R² goodness-of-fit...` },
-      { p: 100, msg: `> [00:05] SUCCESS! AI Demand Prediction System fully trained and validated. Mean R² = 96.1% | RMSE = ±10.8 packs. All 10 medicine forecast curves and stock recommendations updated.` }
-    ];
-
-    term.innerHTML = `<div class="text-info">&gt; Initializing PharmaCast AI Model Training Engine...</div>`;
-
-    let currentStep = 0;
-    if (aiTrainingInterval) clearInterval(aiTrainingInterval);
-
-    aiTrainingInterval = setInterval(() => {
-      if (currentStep >= steps.length) {
-        clearInterval(aiTrainingInterval);
-        aiTrainingInterval = null;
-
-        trainedResults.forEach(item => {
-          const { med, pred, rec } = item;
-          med.trainedModel = true;
-          med.modelName = pred.modelName;
-          med.rSquare = pred.rSquare;
-          med.rmse = pred.rmse;
-          med.equation = pred.equation;
-          med.trendSlope = pred.trendSlope;
-          med.monsoonFactor = pred.monsoonFactor;
-          med.phi = pred.phi;
-          med.lastTrained = new Date().toISOString();
-
-          if (rec) {
-            med.predictedDemand = rec.predictedDemand;
-            med.safetyStock = rec.safetyStock;
-            med.recommendedOrder = rec.recommendedOrder;
-          }
-        });
-        setMedicines(meds);
-
-        bar.className = 'progress-bar bg-success';
-        statusText.textContent = "AI Model Training Complete!";
-        statusText.className = "small text-success fw-bold";
-        finishBtn.style.display = 'inline-block';
-        showToastNotification("✓ AI Model successfully trained on dataset! All graphs, regression diagnostics, and stock recommendations are now synchronized.", "success");
-        return;
-      }
-
-      const step = steps[currentStep];
-      bar.style.width = `${step.p}%`;
+    const log = (msg, cls) => {
       const div = document.createElement('div');
-      div.className = currentStep === steps.length - 1 ? 'text-success fw-bold mt-1' : 'text-light mt-1';
-      div.textContent = step.msg;
+      div.className = cls || 'text-light mt-1';
+      div.textContent = msg;
       term.appendChild(div);
       term.scrollTop = term.scrollHeight;
-      statusText.textContent = `Training in progress... (${step.p}%)`;
+    };
 
-      currentStep++;
-    }, 700);
+    term.innerHTML = '';
+    log('> Initializing PharmaCast AI Model Training Engine...', 'text-info');
+
+    const meds = await syncMedicinesFromServer();
+    const realMeds = meds.filter(m => /^\d+$/.test(String(m.id)));
+
+    if (realMeds.length === 0) {
+      log('> No server-backed medicines found. Log in as admin and add medicines via Manage Medicines first.', 'text-warning');
+      statusText.textContent = 'Nothing to train.';
+      finishBtn.style.display = 'inline-block';
+      return;
+    }
+
+    log(`> Found ${realMeds.length} medicine(s) in the database. Requesting sales_data + running ml/predict.py for each...`, 'text-light');
+
+    let completed = 0;
+    let succeeded = 0;
+    const confidences = [];
+
+    for (const med of realMeds) {
+      if (aiTrainingCancelled) break;
+      statusText.textContent = `Training in progress... (${med.name})`;
+
+      try {
+        const token = getRealAuthToken();
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`/api/predictions/generate/${med.id}`, { method: 'POST', headers });
+        const body = await res.json().catch(() => ({}));
+
+        if (res.status === 422 || body.status === 'insufficient_data') {
+          log(`> [${med.name}] Skipped - only ${body.months_available || 0} month(s) of sales history (need ${body.minimum_required || 6}).`, 'text-warning');
+        } else if (!res.ok) {
+          log(`> [${med.name}] Failed - ${body.error || res.status}`, 'text-danger');
+        } else {
+          const avgConf = (body.predictions || []).reduce((a, p) => a + (p.confidence_score || 0), 0) / ((body.predictions || []).length || 1);
+          confidences.push(avgConf);
+          succeeded++;
+          log(`> [${med.name}] ${body.model_type} fit on ${body.months_available} months -> confidence ${(avgConf * 100).toFixed(1)}%`, 'text-light');
+        }
+      } catch (err) {
+        log(`> [${med.name}] Error - ${err.message}`, 'text-danger');
+      }
+
+      completed++;
+      bar.style.width = `${Math.round((completed / realMeds.length) * 100)}%`;
+    }
+
+    const meanConfidence = confidences.length ? (confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100 : 0;
+    bar.className = 'progress-bar bg-success';
+    statusText.textContent = 'AI Model Training Complete!';
+    statusText.className = 'small text-success fw-bold';
+    log(`> SUCCESS! ${succeeded}/${realMeds.length} medicine forecasts generated by the real ML pipeline. Mean confidence = ${meanConfidence.toFixed(1)}%.`, 'text-success fw-bold mt-1');
+    finishBtn.style.display = 'inline-block';
+    showToastNotification(`✓ AI pipeline run complete: ${succeeded}/${realMeds.length} medicines forecast using the real backend model.`, 'success');
   }
 
   function closeAiTrainingModal() {
+    aiTrainingCancelled = true;
     if (aiTrainingInterval) clearInterval(aiTrainingInterval);
     const modal = document.getElementById('modal-ai-training');
     if (modal) modal.classList.remove('show');
@@ -1730,8 +1907,12 @@
 
   function finishAiTraining() {
     closeAiTrainingModal();
-    openMedicineDetail('MED-101');
-    showToastNotification("Viewing True AI Demand Graph trained on your dataset!", "info");
+    const meds = getMedicines();
+    const firstReal = meds.find(m => /^\d+$/.test(String(m.id)));
+    if (firstReal) {
+      openMedicineDetail(firstReal.id);
+      showToastNotification("Viewing AI Demand Graph generated by the real backend model.", "info");
+    }
   }
 
   // ─── 9. ADMIN MANAGE MEDICINES (CRUD) ───
@@ -1803,7 +1984,11 @@
     if (modal) modal.classList.add('show');
   }
 
-  function saveMedicineForm(e) {
+  // Saves to the real backend (POST/PUT /api/medicines) - requires an admin
+  // session token from bridgeRealLogin(). Falls back to a local-only save
+  // (old behavior) if the server call fails, so the form never silently loses
+  // the admin's input.
+  async function saveMedicineForm(e) {
     e.preventDefault();
     const idVal = document.getElementById('med-form-id').value;
     const nameVal = document.getElementById('med-form-name').value.trim();
@@ -1812,47 +1997,58 @@
     const stockVal = parseInt(document.getElementById('med-form-stock').value, 10) || 0;
     const priceVal = parseInt(document.getElementById('med-form-price').value, 10) || 450;
 
-    const meds = getMedicines();
+    const existing = idVal ? getMedicines().find(m => m.id === idVal) : null;
+    const payload = {
+      medicine_name: nameVal,
+      generic_name: descVal || null,
+      category: catVal,
+      unit_price: priceVal,
+      reorder_level: (existing && existing.reorderLevel != null) ? existing.reorderLevel : 20,
+      current_stock: stockVal
+    };
 
-    if (idVal) {
-      // Edit existing
-      const idx = meds.findIndex(m => m.id === idVal);
-      if (idx !== -1) {
-        meds[idx].name = nameVal;
-        meds[idx].category = catVal;
-        meds[idx].description = descVal;
-        meds[idx].stock = stockVal;
-        meds[idx].unitPriceLKR = priceVal;
-        meds[idx].lastUpdated = new Date().toISOString().split('T')[0];
+    try {
+      if (idVal) {
+        await api.put(`/api/medicines/${idVal}`, payload);
+      } else {
+        await api.post('/api/medicines', payload);
       }
-    } else {
-      // Add new
-      meds.push({
-        id: `MED-${Date.now()}`,
-        name: nameVal,
-        category: catVal,
-        description: descVal,
-        stock: stockVal,
-        unitPriceLKR: priceVal,
-        lastUpdated: new Date().toISOString().split('T')[0],
-        historyMonths: 18,
-        monthlySalesHistory: [200, 210, 220, 240, 250, 260, 270, 220, 210, 230, 240, 250]
-      });
+      await syncMedicinesFromServer();
+      closeMedicineModal();
+      renderManageMedicinesTable();
+      showToastNotification(`Medicine record successfully saved!`, "success");
+    } catch (err) {
+      showToastNotification(`Could not save to server (${err.message}). Saved locally only - log in as admin to sync.`, "error");
+      // Local-only fallback so the admin's work isn't lost if the server is unreachable.
+      const meds = getMedicines();
+      if (idVal) {
+        const idx = meds.findIndex(m => m.id === idVal);
+        if (idx !== -1) {
+          Object.assign(meds[idx], { name: nameVal, category: catVal, description: descVal, stock: stockVal, unitPriceLKR: priceVal, lastUpdated: new Date().toISOString().split('T')[0] });
+        }
+      } else {
+        meds.push({ id: `MED-${Date.now()}`, name: nameVal, category: catVal, description: descVal, stock: stockVal, unitPriceLKR: priceVal, lastUpdated: new Date().toISOString().split('T')[0] });
+      }
+      setMedicines(meds);
+      closeMedicineModal();
+      renderManageMedicinesTable();
     }
-
-    setMedicines(meds);
-    closeMedicineModal();
-    renderManageMedicinesTable();
-    showToastNotification(`Medicine record successfully saved!`, "success");
   }
 
-  function deleteMedicine(medId) {
+  async function deleteMedicine(medId) {
     if (!confirm("Are you sure you want to delete this medicine record?")) return;
-    let meds = getMedicines();
-    meds = meds.filter(m => m.id !== medId);
-    setMedicines(meds);
-    renderManageMedicinesTable();
-    showToastNotification("Medicine record deleted.", "warning");
+    try {
+      await api.del(`/api/medicines/${medId}`);
+      await syncMedicinesFromServer();
+      renderManageMedicinesTable();
+      showToastNotification("Medicine record deleted.", "warning");
+    } catch (err) {
+      showToastNotification(`Could not delete on server (${err.message}). Removed locally only.`, "error");
+      let meds = getMedicines();
+      meds = meds.filter(m => m.id !== medId);
+      setMedicines(meds);
+      renderManageMedicinesTable();
+    }
   }
 
   function closeMedicineModal() {
@@ -1861,7 +2057,7 @@
   }
 
   // ─── 10. AUTHENTICATION, REGISTRATION & 5-ATTEMPT LOCKOUT ───
-  function handleLoginSubmit(e) {
+  async function handleLoginSubmit(e) {
     e.preventDefault();
     const usernameVal = document.getElementById('login-username').value.trim();
     const passwordVal = document.getElementById('login-password').value;
@@ -1921,6 +2117,24 @@
       showPage('page-admin-dashboard');
     } else {
       showPage('page-pharmacist-dashboard');
+    }
+
+    // Obtain a real server session (needed for AI prediction generation and
+    // medicine CRUD) and refresh the medicine catalog from the live database.
+    // Non-fatal if it fails - see bridgeRealLogin().
+    const gotRealSession = await bridgeRealLogin(usernameVal, passwordVal);
+    if (!gotRealSession) {
+      showToastNotification(
+        "Signed in, but couldn't reach the PharmaCast server for AI features - predictions/recommendations may be unavailable.",
+        "warning"
+      );
+    }
+    await syncMedicinesFromServer();
+    if (isUserAdminRole(currentUser)) {
+      renderAdminDashboard();
+      if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+    } else {
+      renderPharmacistDashboard();
     }
   }
 
@@ -2365,6 +2579,18 @@
     } else {
       showPage('page-home');
     }
+
+    // Pull real medicine data from the backend so search/list/detail/manage
+    // pages reflect the live database instead of only the bundled demo set.
+    syncMedicinesFromServer().then(() => {
+      if (!currentUser) return;
+      if (isUserAdminRole(currentUser)) {
+        renderAdminDashboard();
+        if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+      } else {
+        renderPharmacistDashboard();
+      }
+    });
   });
 
 })();
