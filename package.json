@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "setup-db": "python migrations/setup_database.py",
+    "precompute": "node scripts/precompute_predictions.js"
   },
   "keywords": [
     "pharmacy",

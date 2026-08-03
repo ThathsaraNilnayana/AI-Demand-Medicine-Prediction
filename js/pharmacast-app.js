@@ -299,11 +299,41 @@
     return data;
   }
 
+  /** Multipart file upload (can't use apiRequest - the browser must set its
+   *  own multipart boundary Content-Type). Throws an Error whose `.details`
+   *  carries the backend's per-row validation report when present. */
+  async function apiUpload(path, file) {
+    const form = new FormData();
+    form.append('file', file);
+
+    const headers = {};
+    const token = getRealAuthToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    let res;
+    try {
+      res = await fetch(path, { method: 'POST', headers, body: form });
+    } catch (networkErr) {
+      throw new Error('Cannot reach the PharmaCast server. Is `node server.js` running on this machine?');
+    }
+
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* empty/non-JSON body */ }
+
+    if (!res.ok) {
+      const err = new Error(data.error || `Upload failed (${res.status})`);
+      err.details = data.details;
+      throw err;
+    }
+    return data;
+  }
+
   const api = {
     get: (path) => apiRequest('GET', path),
     post: (path, body) => apiRequest('POST', path, body),
     put: (path, body) => apiRequest('PUT', path, body),
-    del: (path) => apiRequest('DELETE', path)
+    del: (path) => apiRequest('DELETE', path),
+    upload: apiUpload
   };
 
   /** Converts a real /api/medicines row into the shape the existing UI code expects. */
@@ -757,7 +787,24 @@
   }
 
   // ─── 4. VIEW & ROUTING CONTROLLER ───
+  // Pages only an Admin may open. Pharmacists attempting these are bounced
+  // back to their own dashboard with an error (SRS role-based access control).
+  // Note this is a UX guard only - every admin API route is independently
+  // protected server-side by requireRole('admin'), which is the real defence.
+  const ADMIN_ONLY_PAGES = [
+    'page-admin-dashboard',
+    'page-admin-approvals',
+    'page-admin-upload',
+    'page-admin-medicines',
+    'page-admin-users'
+  ];
+
   function showPage(pageId) {
+    if (ADMIN_ONLY_PAGES.includes(pageId) && !isUserAdminRole(currentUser)) {
+      showToastNotification("Access denied: that area is restricted to administrators.", "error");
+      pageId = currentUser ? 'page-pharmacist-dashboard' : 'page-home';
+    }
+
     const pages = document.querySelectorAll('.page-view');
     pages.forEach(p => {
       p.classList.remove('active-page');
@@ -820,8 +867,8 @@
     const badge = document.getElementById('admin-pending-badge');
     if (!badge) return;
     try {
-      const allUsers = await api.get('/api/users');
-      const count = allUsers.filter(u => u.status === 'pending').length;
+      const stats = await api.get('/api/stats');
+      const count = stats.pendingApprovals || 0;
       badge.textContent = count;
       badge.style.display = count > 0 ? 'inline-block' : 'none';
     } catch (err) {
@@ -1168,27 +1215,20 @@
 
   // ─── ADMIN DASHBOARD & TRUE ANALYTICS CHART ("all graph must be true") ───
   async function renderAdminDashboard() {
-    // 1. Update 4 Stat Cards - users/pending now come from the real backend;
-    // medicines already does (synced via syncMedicinesFromServer()).
-    const medsCount = getMedicines().length;
-    const filesCount = getSalesFiles().length;
-
+    // All 4 stat cards now come from the real database via /api/stats.
     const statEls = document.querySelectorAll('#page-admin-dashboard .stat-card-luxury h3');
-    if (statEls.length >= 4) {
-      statEls[2].textContent = medsCount;
-      statEls[3].textContent = filesCount;
-    }
 
     try {
-      const allUsers = await api.get('/api/users');
-      const usersCount = allUsers.length;
-      const pendingCount = allUsers.filter(u => u.status === 'pending').length;
+      const stats = await api.get('/api/stats');
       if (statEls.length >= 4) {
-        statEls[0].textContent = usersCount;
-        statEls[1].textContent = pendingCount;
+        statEls[0].textContent = stats.totalUsers;
+        statEls[1].textContent = stats.pendingApprovals;
+        statEls[2].textContent = stats.totalMedicines;
+        statEls[3].textContent = stats.totalSalesRecords;
       }
     } catch (err) {
-      console.warn('[PharmaCast] Could not load user stats from server:', err.message);
+      console.warn('[PharmaCast] Could not load stats from server:', err.message);
+      if (statEls.length >= 4) statEls[2].textContent = getMedicines().length;
     }
 
     // 2. Render Platform-Wide True AI Analytics Chart
@@ -1525,6 +1565,10 @@
     });
   }
 
+  // Shows a quick client-side preview of the first 10 rows, then (on confirm)
+  // uploads the actual file to the real backend, which re-validates every row
+  // server-side inside a single all-or-nothing transaction and stores it in
+  // sales_data - the same table the ML engine reads from.
   function handleFileUpload(file) {
     if (!file) return;
 
@@ -1534,6 +1578,71 @@
 
     if (errorArea) errorArea.style.display = 'none';
     if (previewArea) previewArea.style.display = 'none';
+
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+      showCsvError(`Unsupported file type ".${ext}". Please upload a .csv, .xlsx or .xls file.`);
+      return;
+    }
+
+    const bindConfirm = (rowCountLabel) => {
+      const confirmBtn = document.getElementById('btn-confirm-store-csv');
+      if (!confirmBtn) return;
+      confirmBtn.onclick = async () => {
+        confirmBtn.disabled = true;
+        const originalHtml = confirmBtn.innerHTML;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Uploading...';
+        try {
+          const result = await api.upload('/api/sales/upload', file);
+
+          const files = getSalesFiles();
+          files.unshift({
+            id: `FILE-${Date.now()}`,
+            fileName: file.name,
+            uploadDate: new Date().toISOString().split('T')[0],
+            recordCount: result.imported,
+            uploadedBy: currentUser ? `${currentUser.role} (${currentUser.fullName})` : "Admin",
+            status: "Verified & Stored"
+          });
+          setSalesFiles(files);
+          renderSalesFilesTable();
+          if (previewArea) previewArea.style.display = 'none';
+          if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+          showToastNotification(
+            `${result.imported} historical sales records stored from ${file.name}. Run the AI pipeline to refresh forecasts.`,
+            "success"
+          );
+        } catch (err) {
+          // Backend reports failures per row - surface them with row numbers.
+          if (Array.isArray(err.details) && err.details.length) {
+            const lines = err.details
+              .slice(0, 20)
+              .map(d => `Row #${d.row}: ${(d.errors || []).join(', ')}`);
+            if (err.details.length > 20) lines.push(`...and ${err.details.length - 20} more row(s).`);
+            showCsvError(`${err.message}\n• ` + lines.join('\n• '));
+          } else {
+            showCsvError(err.message);
+          }
+          if (previewArea) previewArea.style.display = 'none';
+        } finally {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = originalHtml;
+        }
+      };
+    };
+
+    // Spreadsheets can't be previewed as text in the browser without extra
+    // libraries - skip straight to the (server-validated) upload step.
+    if (ext !== 'csv') {
+      if (previewTbody) {
+        previewTbody.innerHTML = `<tr><td colspan="5" class="text-muted text-center py-3">
+          Preview is only available for .csv files. "${file.name}" will be fully validated by the server on upload.
+        </td></tr>`;
+      }
+      if (previewArea) previewArea.style.display = 'block';
+      bindConfirm();
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = function (e) {
@@ -1547,7 +1656,7 @@
 
       // Check header columns
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const required = ['date', 'medicine name', 'quantity sold'];
+      const required = ['date', 'medicine', 'quantity'];
       const isValidHeader = required.every(r => headers.some(h => h.includes(r)));
 
       if (!isValidHeader) {
@@ -1555,29 +1664,19 @@
         return;
       }
 
-      // Validate rows & build preview
+      // Build a first-10-rows preview (the server is the authority on validity).
       const previewRows = [];
-      const errors = [];
-
       for (let i = 1; i < lines.length && i <= 10; i++) {
         const cols = lines[i].split(',').map(c => c.trim());
-        const dateVal = cols[0];
-        const medNameVal = cols[1];
-        const qtyVal = parseInt(cols[2], 10);
-
-        if (!dateVal || !medNameVal || isNaN(qtyVal)) {
-          errors.push(`Row #${i + 1}: Malformed data (${lines[i]})`);
-        } else {
-          previewRows.push({ rowNum: i + 1, date: dateVal, medName: medNameVal, qty: qtyVal });
-        }
+        previewRows.push({
+          rowNum: i + 1,
+          date: cols[0] || '',
+          medName: cols[1] || '',
+          qty: cols[2] || '',
+          ok: Boolean(cols[0]) && Boolean(cols[1]) && !isNaN(parseInt(cols[2], 10))
+        });
       }
 
-      if (errors.length > 0) {
-        showCsvError(`Validation errors detected on upload:\n• ` + errors.join('\n• '));
-        return;
-      }
-
-      // Display 10-row preview
       if (previewTbody) {
         previewTbody.innerHTML = '';
         previewRows.forEach(r => {
@@ -1586,35 +1685,17 @@
             <td><span class="badge bg-light text-dark border">#${r.rowNum}</span></td>
             <td><code>${r.date}</code></td>
             <td><strong class="text-dark">${r.medName}</strong></td>
-            <td><span class="badge-stock-green">${r.qty} Packs</span></td>
-            <td><span class="text-success"><i class="bi bi-check-circle-fill"></i> Valid</span></td>
+            <td><span class="${r.ok ? 'badge-stock-green' : 'badge bg-danger'}">${r.qty} ${r.ok ? 'Packs' : ''}</span></td>
+            <td>${r.ok
+              ? '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Looks valid</span>'
+              : '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Malformed</span>'}</td>
           `;
           previewTbody.appendChild(tr);
         });
       }
 
       if (previewArea) previewArea.style.display = 'block';
-
-      // Bind confirm storage button
-      const confirmBtn = document.getElementById('btn-confirm-store-csv');
-      if (confirmBtn) {
-        confirmBtn.onclick = () => {
-          saveUploadedSalesRecords(previewRows);
-          const files = getSalesFiles();
-          files.unshift({
-            id: `FILE-${Date.now()}`,
-            fileName: file.name,
-            uploadDate: new Date().toISOString().split('T')[0],
-            recordCount: lines.length - 1,
-            uploadedBy: currentUser ? `${currentUser.role} (${currentUser.fullName})` : "Admin",
-            status: "Verified & Stored"
-          });
-          setSalesFiles(files);
-          renderSalesFilesTable();
-          if (previewArea) previewArea.style.display = 'none';
-          showToastNotification(`Successfully ingested ${lines.length - 1} historical sales records from ${file.name}! Ready for ML training.`, "success");
-        };
-      }
+      bindConfirm(lines.length - 1);
     };
     reader.readAsText(file);
   }
@@ -2232,7 +2313,16 @@
     showPage('page-login');
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    // Destroy the session server-side too (deletes the sessions row), not just
+    // the local copy of it - otherwise the token would stay valid until it expired.
+    try {
+      await api.post('/api/logout');
+    } catch (err) {
+      console.warn('[PharmaCast] Server logout failed (session will still expire on its own):', err.message);
+    }
+
+    setRealAuthToken(null);
     currentUser = null;
     sessionStorage.removeItem('pc_current_user');
     sessionStorage.removeItem('currentUser');
@@ -2441,7 +2531,10 @@
       localStorage.setItem('currentUser', JSON.stringify(currentUser));
       updateNavbarState();
       showPage('page-admin-dashboard');
-      showToastNotification("Switched to Admin view (Dr. Saman Weerasinghe)", "success");
+      // This switcher only changes the local UI role - it does NOT grant a real
+      // server session, so admin API actions (approvals, uploads, medicine CRUD,
+      // AI generation) will still be rejected with 401/403 until a real login.
+      showToastNotification("Switched to Admin VIEW only - log in properly for admin actions to work.", "warning");
     } else if (role === 'Pharmacist') {
       currentUser = getUsers().find(u => u.role === 'Pharmacist') || DEFAULT_USERS[1];
       sessionStorage.setItem('pc_current_user', JSON.stringify(currentUser));
