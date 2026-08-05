@@ -70,26 +70,10 @@ router.post('/login',
     async (req, res, next) => {
         try {
             const { username, password } = req.body;
-            const unameClean = String(username || '').trim().toLowerCase();
-            if ((unameClean === 'admin' || unameClean === 'admin@pharmacast.lk' || unameClean === 'admin@pharmacast.com') && password === 'admin') {
-                const { token } = await createSession(2, 'admin');
-                return res.json({
-                    user_id: 2,
-                    username: 'admin',
-                    email: 'priya@pharmacy.lk',
-                    role: 'admin',
-                    name: 'Dr. Saman Weerasinghe',
-                    full_name: 'Dr. Saman Weerasinghe',
-                    phone: '0770000001',
-                    pharmacy_name: 'PharmaCast Admin',
-                    status: 'active',
-                    token
-                });
-            }
 
             const user = await db.get(
                 `SELECT user_id, username, email, password_hash, role, full_name, phone, pharmacy_name, status,
-                        failed_login_attempts, locked_until
+                        failed_login_attempts, locked_until, rejection_reason
                  FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)`,
                 [username, username]
             );
@@ -118,6 +102,25 @@ router.post('/login',
                     return res.status(423).json({ error: 'Account locked for 30 minutes after 5 failed attempts' });
                 }
                 return res.status(401).json({ error: 'Invalid credentials' });
+            }
+
+            // Password is correct, but a correct password doesn't mean the
+            // account is allowed in yet - pending/rejected/deactivated
+            // accounts must not receive a session.
+            if (user.status === 'pending') {
+                return res.status(403).json({ error: 'Your registration is still awaiting administrator approval.' });
+            }
+            if (user.status === 'rejected') {
+                // FR10: show the pharmacist WHY they were rejected.
+                return res.status(403).json({
+                    error: user.rejection_reason
+                        ? `Your registration was rejected by an administrator. Reason: ${user.rejection_reason}`
+                        : 'Your registration was rejected by an administrator.',
+                    rejection_reason: user.rejection_reason || null
+                });
+            }
+            if (user.status === 'inactive') {
+                return res.status(403).json({ error: 'Your account has been deactivated by an administrator.' });
             }
 
             // Successful auth: reset failed attempts, create a session.

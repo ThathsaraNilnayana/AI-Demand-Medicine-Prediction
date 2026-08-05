@@ -147,83 +147,15 @@
     }
   ];
 
-  const DEFAULT_USERS = [
-    {
-      id: "USR-001",
-      username: "admin",
-      password: "admin",
-      fullName: "Dr. Saman Weerasinghe",
-      email: "admin@pharmacast.lk",
-      contactNumber: "0770000001",
-      role: "Admin",
-      status: "Active",
-      createdAt: "2026-01-10"
-    },
-    {
-      id: "USR-002",
-      username: "pharmacist",
-      password: "Password@123",
-      fullName: "Kasun Perera (Chief Pharmacist)",
-      email: "kasun.perera@pharmacast.lk",
-      contactNumber: "0771122334",
-      role: "Pharmacist",
-      status: "Active",
-      createdAt: "2026-02-15"
-    }
-  ];
-
-  const DEFAULT_REGISTRATION_REQUESTS = [
-    {
-      id: "REQ-201",
-      fullName: "Nimesh Fernando",
-      email: "nimesh.f@citypharmacy.lk",
-      contactNumber: "0772345678",
-      username: "nimesh_p",
-      password: "Password@123",
-      status: "Pending",
-      submittedAt: "2026-07-29"
-    },
-    {
-      id: "REQ-202",
-      fullName: "Dilini Senanayake",
-      email: "dilini.s@lankapharmacy.lk",
-      contactNumber: "0773456789",
-      username: "dilini_s",
-      password: "Password@123",
-      status: "Pending",
-      submittedAt: "2026-07-30"
-    }
-  ];
-
-  const DEFAULT_SALES_FILES = [
-    {
-      id: "FILE-301",
-      fileName: "sri_lanka_pharmacy_sales_q1_q2_2026.csv",
-      uploadDate: "2026-07-15",
-      recordCount: 360,
-      uploadedBy: "Admin (Dr. Saman Weerasinghe)",
-      status: "Verified & Stored"
-    },
-    {
-      id: "FILE-302",
-      fileName: "colombo_district_sales_history_2025.xlsx",
-      uploadDate: "2026-06-10",
-      recordCount: 540,
-      uploadedBy: "Admin (Dr. Saman Weerasinghe)",
-      status: "Verified & Stored"
-    }
-  ];
+  // Client-recorded metadata about sales files uploaded through this browser
+  // (which file, when, how many rows) - the sales rows themselves live in the
+  // real backend; this is just a local upload history log, seeded empty.
+  const DEFAULT_SALES_FILES = [];
 
   // Initialize localStorage if not present
   function initLocalStorage() {
     if (!localStorage.getItem('pc_medicines')) {
       localStorage.setItem('pc_medicines', JSON.stringify(DEFAULT_MEDICINES));
-    }
-    if (!localStorage.getItem('pc_users')) {
-      localStorage.setItem('pc_users', JSON.stringify(DEFAULT_USERS));
-    }
-    if (!localStorage.getItem('pc_registration_requests')) {
-      localStorage.setItem('pc_registration_requests', JSON.stringify(DEFAULT_REGISTRATION_REQUESTS));
     }
     if (!localStorage.getItem('pc_sales_files')) {
       localStorage.setItem('pc_sales_files', JSON.stringify(DEFAULT_SALES_FILES));
@@ -238,27 +170,21 @@
   // Helper getters/setters
   function getMedicines() { return JSON.parse(localStorage.getItem('pc_medicines') || '[]'); }
   function setMedicines(data) { localStorage.setItem('pc_medicines', JSON.stringify(data)); }
-  function getUsers() {
-    const pcUsers = JSON.parse(localStorage.getItem('pc_users') || '[]');
-    const otherUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const map = new Map();
-    [...DEFAULT_USERS, ...otherUsers, ...pcUsers].forEach(u => {
-      if (u && (u.username || u.email)) {
-        map.set((u.username || u.email).toLowerCase(), u);
-      }
-    });
-    return Array.from(map.values());
-  }
-  function setUsers(data) { localStorage.setItem('pc_users', JSON.stringify(data)); }
-  function getRequests() { return JSON.parse(localStorage.getItem('pc_registration_requests') || '[]'); }
-  function setRequests(data) { localStorage.setItem('pc_registration_requests', JSON.stringify(data)); }
   function getSalesFiles() { return JSON.parse(localStorage.getItem('pc_sales_files') || '[]'); }
   function setSalesFiles(data) { localStorage.setItem('pc_sales_files', JSON.stringify(data)); }
 
+  // Accepts either a real backend user row (role: 'admin'|'pharmacist') or
+  // the currentUser shape derived from the login response.
   function isUserAdminRole(u) {
     if (!u) return false;
     const roleStr = String(u.role || u.user_role || u.type || '').toLowerCase();
-    return roleStr.includes('admin') || u.username === 'admin' || u.email === 'admin@pharmacast.com' || u.email === 'admin@pharmacast.lk';
+    return roleStr.includes('admin') || u.username === 'admin';
+  }
+
+  // Human-facing role label - the backend/session stores the bare 'admin' /
+  // 'pharmacist' role string, but the UI should always say "Administrator".
+  function displayRoleLabel(u) {
+    return isUserAdminRole(u) ? 'Administrator' : 'Pharmacist';
   }
 
   // ─── REAL BACKEND API CLIENT ───
@@ -274,6 +200,28 @@
     else sessionStorage.removeItem('pc_real_token');
   }
 
+  // A relative fetch like '/api/login' only reaches the real backend when the
+  // PAGE ITSELF is being served BY that backend (http://localhost:8051/...).
+  // Two other ways of viewing this page don't satisfy that:
+  //   - straight off disk (file:///...) - relative fetches resolve against
+  //     the filesystem and fail outright.
+  //   - a VS Code preview (Live Server / Live Preview), which serves the HTML
+  //     from its OWN little static server on a different port (typically
+  //     5500) - the page loads fine, but every /api/* call silently hits
+  //     that static server instead of Express, which has no such routes.
+  // Either way the fix is the same: whenever this page isn't already being
+  // served from port 8051, send API calls there explicitly instead of
+  // relative to whatever is currently hosting the page.
+  // NOTE: PORT was moved from 5051 to 8051 because Windows' dynamic Hyper-V/WSL
+  // port-exclusion range (netsh int ipv4 show excludedportrange) had claimed
+  // 5041-5140 on this machine, which made Node fail to bind with EACCES.
+  const REAL_API_PORT = '8051';
+  const servedByRealApi = window.location.protocol !== 'file:' && window.location.port === REAL_API_PORT;
+  const API_BASE = servedByRealApi ? '' : `http://localhost:${REAL_API_PORT}`;
+  function apiUrl(path) {
+    return /^https?:\/\//i.test(path) ? path : API_BASE + path;
+  }
+
   async function apiRequest(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
     const token = getRealAuthToken();
@@ -281,7 +229,7 @@
 
     let res;
     try {
-      res = await fetch(path, {
+      res = await fetch(apiUrl(path), {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined
@@ -294,9 +242,31 @@
     try { data = await res.json(); } catch (e) { /* empty/non-JSON body */ }
 
     if (!res.ok) {
+      handleAuthFailure(res.status, path);
       throw new Error(data.error || `Request failed (${res.status})`);
     }
     return data;
+  }
+
+  /**
+   * A 401 on an authenticated call means the session expired (30 min of
+   * inactivity) or the token is gone. Without this, every action just failed
+   * with an opaque error and the UI still looked logged in - so "I can't
+   * upload" was really "you were silently signed out".
+   *
+   * /api/login is excluded: a 401 there is simply wrong credentials.
+   */
+  function handleAuthFailure(status, path) {
+    if (status !== 401) return;
+    if (String(path).includes('/api/login')) return;
+
+    setRealAuthToken(null);
+    currentUser = null;
+    sessionStorage.removeItem('pc_current_user');
+    sessionStorage.removeItem('currentUser');
+    updateNavbarState();
+    showToastNotification('Your session expired. Please log in again to continue.', 'warning');
+    showPage('page-login');
   }
 
   /** Multipart file upload (can't use apiRequest - the browser must set its
@@ -312,7 +282,7 @@
 
     let res;
     try {
-      res = await fetch(path, { method: 'POST', headers, body: form });
+      res = await fetch(apiUrl(path), { method: 'POST', headers, body: form });
     } catch (networkErr) {
       throw new Error('Cannot reach the PharmaCast server. Is `node server.js` running on this machine?');
     }
@@ -321,8 +291,11 @@
     try { data = await res.json(); } catch (e) { /* empty/non-JSON body */ }
 
     if (!res.ok) {
+      handleAuthFailure(res.status, path);
       const err = new Error(data.error || `Upload failed (${res.status})`);
       err.details = data.details;
+      err.duplicate = Boolean(data.duplicate);
+      err.detail = data.detail;
       throw err;
     }
     return data;
@@ -347,6 +320,9 @@
       unitPriceLKR: row.unit_price,
       reorderLevel: row.reorder_level,
       alertStatus: row.alert_status,
+      dosage: row.dosage || null,
+      manufacturer: row.manufacturer || null,
+      createdFromUpload: Boolean(row.created_from_upload),
       lastUpdated: (row.created_at || '').split(' ')[0].split('T')[0]
     };
   }
@@ -410,7 +386,9 @@
   }
 
   // Session & Inactivity state
-  let currentUser = JSON.parse(sessionStorage.getItem('pc_current_user') || sessionStorage.getItem('currentUser') || localStorage.getItem('pc_current_user') || localStorage.getItem('currentUser') || 'null');
+  // Session-scoped only - see the note in handleLoginSubmit about why this
+  // must not fall back to localStorage.
+  let currentUser = JSON.parse(sessionStorage.getItem('pc_current_user') || sessionStorage.getItem('currentUser') || 'null');
   let lastActivityTime = Date.now();
   let inactivityTimer = null;
   let chartInstance = null;
@@ -670,6 +648,9 @@
   function renderPredictionChart(canvasId, predictionResult) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+    if (typeof Chart === 'undefined') {
+      throw new Error('Chart.js is not loaded (check your internet connection / the cdn.jsdelivr.net CDN)');
+    }
     const ctx = canvas.getContext('2d');
 
     if (chartInstance) {
@@ -800,13 +781,38 @@
     'page-admin-users'
   ];
 
+  // The Admin Hub (dashboard/approvals/medicines) now lives in its own
+  // document, admin.html, instead of being just another hidden section of
+  // index.html. Every other page still lives in index.html. showPage() below
+  // is called the same way from both documents, so when it's asked for a
+  // page that isn't in the current document it hands off to whichever file
+  // actually has it, carrying the intended page across as a URL hash so the
+  // other document can pick up where this one left off.
+  const ADMIN_HUB_PAGES = ['page-admin-dashboard', 'page-admin-approvals', 'page-admin-medicines'];
+  function crossDocumentFileFor(pageId) {
+    return ADMIN_HUB_PAGES.includes(pageId) ? 'admin.html' : 'index.html';
+  }
+
   function showPage(pageId) {
     if (pageId === 'page-admin-upload' && !currentUser) {
       showToastNotification("Please log in to upload sales data.", "error");
       pageId = 'page-home';
+    } else if (pageId === 'page-pharmacist-medicines' && !currentUser) {
+      showToastNotification("Please log in to view the medicine library.", "error");
+      pageId = 'page-home';
     } else if (ADMIN_ONLY_PAGES.includes(pageId) && !isUserAdminRole(currentUser)) {
       showToastNotification("Access denied: that area is restricted to administrators.", "error");
       pageId = currentUser ? 'page-pharmacist-dashboard' : 'page-home';
+    }
+
+    const target = document.getElementById(pageId);
+    if (!target) {
+      const destFile = crossDocumentFileFor(pageId);
+      const hereFile = (window.location.pathname.split('/').pop() || 'index.html').toLowerCase();
+      if (hereFile !== destFile.toLowerCase()) {
+        window.location.href = destFile + '#' + pageId;
+        return;
+      }
     }
 
     const pages = document.querySelectorAll('.page-view');
@@ -814,7 +820,6 @@
       p.classList.remove('active-page');
     });
 
-    const target = document.getElementById(pageId);
     if (target) {
       target.classList.add('active-page');
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -830,11 +835,18 @@
       renderAdminDashboard();
     } else if (pageId === 'page-admin-approvals') {
       renderPendingApprovalsTable();
+      renderAllUsersTable();
     } else if (pageId === 'page-admin-upload') {
       renderSalesFilesTable();
     } else if (pageId === 'page-admin-medicines') {
       renderManageMedicinesTable();
+    } else if (pageId === 'page-pharmacist-medicines') {
+      renderPharmacistMedicinesTable();
     }
+
+    // Keep the iOS segmented control in sync with the page actually shown,
+    // including navigations that didn't originate from a nav tap.
+    if (typeof syncActiveNavItem === 'function') syncActiveNavItem(pageId);
   }
 
   // The upload page is shared by both roles now, so its "Back" button can't
@@ -843,29 +855,55 @@
     showPage(isUserAdminRole(currentUser) ? 'page-admin-dashboard' : 'page-pharmacist-dashboard');
   }
 
+  // Bootstrap's .d-flex utility class carries display:flex !important, which
+  // silently wins over a plain element.style.display = 'none' set from here -
+  // the section stays visibly flex even though the inline style says none.
+  // Toggling the .d-flex class itself (not just the inline style) is what
+  // actually hides/shows these nav sections.
+  function setNavSectionVisible(el, visible) {
+    if (!el) return;
+    el.classList.toggle('d-flex', visible);
+    el.style.display = visible ? 'flex' : 'none';
+  }
+
+  // Renders the small avatar-chip badge shown in the navbar for the signed-in
+  // user: a dashed ring around a role icon plus a stacked role/name label.
+  // See .user-role-badge in pharmacast-luxury.css for the visual treatment.
+  function renderUserRoleBadge(roleLabel, fullName, iconClass, variantClass) {
+    return `
+      <div class="user-role-badge ${variantClass}">
+        <span class="user-role-badge-avatar"><i class="bi ${iconClass}"></i></span>
+        <span class="user-role-badge-text">
+          <span class="user-role-badge-role">${roleLabel}</span>
+          <span class="user-role-badge-name">${fullName}</span>
+        </span>
+      </div>
+    `;
+  }
+
   function updateNavbarState() {
     const navLoggedOut = document.getElementById('nav-logged-out');
     const navPharmacist = document.getElementById('nav-pharmacist');
     const navAdmin = document.getElementById('nav-admin');
     const navUserBadge = document.getElementById('nav-user-badge');
 
-    if (navLoggedOut) navLoggedOut.style.display = 'none';
-    if (navPharmacist) navPharmacist.style.display = 'none';
-    if (navAdmin) navAdmin.style.display = 'none';
+    setNavSectionVisible(navLoggedOut, false);
+    setNavSectionVisible(navPharmacist, false);
+    setNavSectionVisible(navAdmin, false);
 
     if (!currentUser) {
-      if (navLoggedOut) navLoggedOut.style.display = 'flex';
+      setNavSectionVisible(navLoggedOut, true);
       if (navUserBadge) navUserBadge.innerHTML = '';
     } else if (isUserAdminRole(currentUser)) {
-      if (navAdmin) navAdmin.style.display = 'flex';
+      setNavSectionVisible(navAdmin, true);
       if (navUserBadge) {
-        navUserBadge.innerHTML = `<span class="badge-stock-green" style="background:#d1fae5; color:#065f46;"><i class="bi bi-shield-lock-fill"></i> Admin: ${currentUser.fullName}</span>`;
+        navUserBadge.innerHTML = renderUserRoleBadge('Administrator', currentUser.fullName, 'bi-shield-lock-fill', 'role-admin');
       }
       updatePendingCountBadge();
     } else {
-      if (navPharmacist) navPharmacist.style.display = 'flex';
+      setNavSectionVisible(navPharmacist, true);
       if (navUserBadge) {
-        navUserBadge.innerHTML = `<span class="badge-stock-green" style="background:#e0f2fe; color:#0369a1;"><i class="bi bi-person-badge-fill"></i> Pharmacist: ${currentUser.fullName}</span>`;
+        navUserBadge.innerHTML = renderUserRoleBadge('Pharmacist', currentUser.fullName, 'bi-person-badge-fill', 'role-pharmacist');
       }
     }
   }
@@ -901,8 +939,39 @@
     if (elLow) elLow.setAttribute('data-target', lowStock);
     if (elOut) elOut.setAttribute('data-target', outOfStock);
 
+    const welcomeHeading = document.getElementById('pharm-welcome-heading');
+    if (welcomeHeading) {
+      welcomeHeading.textContent = currentUser ? `Ayubowan, ${currentUser.fullName}!` : 'Ayubowan!';
+    }
+    const welcomeDate = document.getElementById('pharm-welcome-date');
+    if (welcomeDate) {
+      welcomeDate.textContent = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+
     triggerAnimateNumbers();
     renderRecentMedicinesList(meds);
+    renderDashboardQuickSelect(meds);
+  }
+
+  /** Populates the "Quick Select" badges above the dashboard search bar with
+   *  real medicines instead of the hardcoded MED-101..MED-110 demo IDs that
+   *  used to sit here (and no longer exist once real data replaces the demo
+   *  seed - clicking them silently opened whatever medicine happened to be
+   *  first in the list, not the one labeled on the badge). */
+  function renderDashboardQuickSelect(meds) {
+    const el = document.getElementById('dashboard-quick-select');
+    if (!el) return;
+    const real = meds.filter(m => /^\d+$/.test(String(m.id)));
+    if (real.length === 0) {
+      el.innerHTML = '<span class="text-muted">Upload a sales dataset to see medicines here.</span>';
+      return;
+    }
+    const picks = real.slice(0, 5);
+    el.innerHTML = '<strong>Quick Select: </strong>' + picks.map(m => `
+      <span class="badge bg-light text-dark border me-1" style="cursor:pointer;"
+            onclick="window.PharmaCastApp.openMedicineDetail('${m.id}')">
+        ${m.name}${m.dosage ? ` (${m.dosage})` : ''}
+      </span>`).join('');
   }
 
   function renderRecentMedicinesList(meds) {
@@ -945,6 +1014,103 @@
   }
 
   // Focus search box smoothly
+  /**
+   * The "Forecasts" / "Stock" nav shortcuts used to hardcode
+   * openMedicineDetail('MED-101') - a leftover demo medicine ID that doesn't
+   * exist once real data is loaded. openMedicineDetail() silently falls back
+   * to meds[0] when an ID isn't found, so this happened to still open SOME
+   * medicine's detail page - but which one was accidental, and it broke
+   * outright for an empty/just-registered account. This opens the most
+   * recently updated real (server-backed) medicine on purpose, or sends the
+   * user to the Medicine Library to pick one if there isn't one yet.
+   */
+  // Shared by openForecastShortcut/openStockShortcut: picks a server-backed
+  // medicine to open, or sends the user to the Medicine Library (with an
+  // explanatory toast) if there isn't one yet.
+  //
+  // This used to just take the single most-recently-added/edited medicine,
+  // full stop. That's a problem the instant that medicine happens to have
+  // under 6 months of sales history (very likely right after any upload,
+  // since new/edited rows always sort first): the model genuinely can't
+  // forecast it, so openMedicineDetail correctly shows "Insufficient Data"
+  // and stops - but the user just sees Forecasts/Stock produce the SAME
+  // dead end every single time they click, forever, with no way to reach
+  // any of the other medicines that already have real forecasts. It reads
+  // exactly like "the button is broken," not "this one medicine lacks data."
+  // Now it asks the server which medicines actually have >=6 months of
+  // history (the same eligibility check Train Model uses) and picks the
+  // most recently touched ELIGIBLE one, only falling back to "most recent,
+  // period" if that check can't be reached.
+  // Returns the medicine, or null if it redirected instead.
+  async function pickShortcutTargetMedicine() {
+    const real = getMedicines().filter(m => /^\d+$/.test(String(m.id)));
+    if (real.length === 0) {
+      showPage('page-pharmacist-medicines');
+      showToastNotification('No medicines with sales history yet — pick one below to view its forecast.', 'info');
+      return null;
+    }
+
+    const byRecency = real.slice().sort((a, b) => String(b.lastUpdated || '').localeCompare(String(a.lastUpdated || '')));
+
+    try {
+      const elig = await api.get('/api/sales/trainable');
+      const eligibleIds = new Set(
+        (elig.medicines || []).filter(r => r.months >= 6).map(r => String(r.medicine_id))
+      );
+      const eligiblePick = byRecency.find(m => eligibleIds.has(String(m.id)));
+      if (eligiblePick) return eligiblePick;
+
+      // Real medicines exist, but NONE have enough history yet - that's a
+      // genuine "nothing to forecast yet" state, not a broken button. Say so.
+      if (eligibleIds.size === 0) {
+        showToastNotification(
+          'No medicine has 6+ months of sales history yet, so the AI model can\'t forecast any of them. '
+          + 'Upload more sales data, then try again.',
+          'warning'
+        );
+      }
+    } catch (err) {
+      console.warn('[PharmaCast] Could not check forecast eligibility, falling back to most-recent medicine:', err.message);
+    }
+
+    return byRecency[0];
+  }
+
+  // Which nav pill should stay lit up while page-medicine-detail is open.
+  // syncActiveNavItem() (called at the end of every showPage()) has no entry
+  // for page-medicine-detail, so without this the pill you just tapped lights
+  // up for a frame and is then stripped back to unselected the moment the
+  // page finishes switching - a visible "blink and go back" on the nav bar
+  // itself even though the page underneath navigated correctly.
+  let lastDetailEntryPoint = null; // 'forecast' | 'stock'
+
+  async function openForecastShortcut() {
+    const target = await pickShortcutTargetMedicine();
+    if (!target) return;
+    lastDetailEntryPoint = 'forecast';
+    openMedicineDetail(target.id);
+  }
+
+  // "Stock" nav link. Used to call openForecastShortcut() directly, which
+  // opened the exact same medicine detail page scrolled to the top (the
+  // forecast graph) - so clicking "Stock" never actually showed anything
+  // stock-related, it just looked like "Forecasts" again. This opens the
+  // same page but scrolls down to the Stock Recommendation panel once its
+  // content has finished loading (id="stock-recommendation-panel" in
+  // index.html).
+  async function openStockShortcut() {
+    const target = await pickShortcutTargetMedicine();
+    if (!target) return;
+    lastDetailEntryPoint = 'stock';
+    await openMedicineDetail(target.id);
+    setTimeout(() => {
+      const panel = document.getElementById('stock-recommendation-panel');
+      if (panel && panel.offsetParent !== null) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 150);
+  }
+
   function focusSearchInput() {
     showPage('page-pharmacist-dashboard');
     setTimeout(() => {
@@ -1117,7 +1283,7 @@
         const token = getRealAuthToken();
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`/api/predictions/generate/${med.id}`, { method: 'POST', headers });
+        const res = await fetch(apiUrl(`/api/predictions/generate/${med.id}`), { method: 'POST', headers });
         const body = await res.json().catch(() => ({}));
 
         if (res.status === 422 || body.status === 'insufficient_data') {
@@ -1167,7 +1333,28 @@
     if (rmseEl) rmseEl.textContent = prediction.rmse;
     if (monsEl) monsEl.textContent = prediction.monsoonFactor;
 
-    renderPredictionChart('predictionChartCanvas', prediction);
+    // The chart is drawn with Chart.js, loaded from a CDN (index.html). If that
+    // load ever fails - offline, blocked network, slow connection - `Chart` is
+    // undefined and the draw call throws. Since this is an uncaught exception
+    // inside an async function, it would otherwise silently kill everything
+    // AFTER it, including the whole Stock Recommendation panel below - which is
+    // exactly what "Forecasts" and "Stock" both open, so one CDN hiccup could
+    // look like both features being broken at once. A failed chart should never
+    // be able to take the recommendation panel down with it.
+    try {
+      renderPredictionChart('predictionChartCanvas', prediction);
+    } catch (chartErr) {
+      console.warn('[PharmaCast] Chart render failed (Chart.js may not have loaded):', chartErr.message);
+      const canvas = document.getElementById('predictionChartCanvas');
+      if (canvas && canvas.parentElement) {
+        const warn = document.createElement('div');
+        warn.className = 'alert alert-warning small mb-0';
+        warn.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>Chart could not load '
+          + '(the charting library did not load from the network). The numbers below are still accurate.';
+        canvas.style.display = 'none';
+        canvas.parentElement.insertBefore(warn, canvas);
+      }
+    }
 
     // Fetch & display the real Stock Recommendation (FR32-35).
     try {
@@ -1386,6 +1573,7 @@
     try {
       await api.put(`/api/users/${userId}/approve`);
       renderPendingApprovalsTable();
+      renderAllUsersTable();
       updatePendingCountBadge();
       if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
       showToastNotification(`User account #${userId} has been approved and activated!`, "success");
@@ -1404,11 +1592,18 @@
 
   async function confirmRejectRequest() {
     if (!selectedRejectId) return;
-    const reason = document.getElementById('reject-reason-input').value.trim() || "Does not meet Sri Lanka pharmacy licensing verification.";
+    // FR10: the reason is mandatory - it is stored and shown to the rejected
+    // pharmacist, so it can't be silently defaulted on their behalf.
+    const reason = document.getElementById('reject-reason-input').value.trim();
+    if (!reason) {
+      showToastNotification('Please enter a rejection reason before confirming.', 'warning');
+      return;
+    }
 
     try {
       await api.put(`/api/users/${selectedRejectId}/reject`, { reason });
       renderPendingApprovalsTable();
+      renderAllUsersTable();
       updatePendingCountBadge();
       if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
       showToastNotification(`Registration request rejected. Reason: ${reason}`, "warning");
@@ -1425,30 +1620,41 @@
     if (modal) modal.classList.remove('show');
   }
 
-  // ─── ADMIN USER ACCOUNT CONTROL CENTER ("Create Admin account to control all account") ───
-  function renderAllUsersTable() {
+  // ─── ADMIN USER ACCOUNT CONTROL CENTER ─── (backed by the real /api/users endpoints)
+  async function renderAllUsersTable() {
     const tbody = document.getElementById('admin-all-users-tbody');
     if (!tbody) return;
 
-    const users = getUsers();
+    let users;
+    try {
+      users = await api.get('/api/users');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Could not load accounts from server: ${err.message}</td></tr>`;
+      return;
+    }
+
     tbody.innerHTML = '';
 
     users.forEach(u => {
-      const isSelf = currentUser && currentUser.id === u.id;
+      const isSelf = currentUser && String(currentUser.id) === String(u.user_id);
       const isAdmin = isUserAdminRole(u);
-      const roleBadge = isAdmin 
-        ? `<span class="badge" style="background:#1e293b; color:#fff; border:1px solid #3b82f6;"><i class="bi bi-shield-lock-fill"></i> Admin</span>`
+      const roleBadge = isAdmin
+        ? `<span class="badge" style="background:#1e293b; color:#fff; border:1px solid #3b82f6;"><i class="bi bi-shield-lock-fill"></i> Administrator</span>`
         : `<span class="badge" style="background:#d1fae5; color:#065f46; border:1px solid #10b981;"><i class="bi bi-person-fill"></i> Pharmacist</span>`;
 
-      const statusBadge = u.status === 'Deactivated'
-        ? `<span class="badge bg-danger">Deactivated</span>`
-        : `<span class="badge-stock-green" style="font-size:0.8rem;">Active</span>`;
+      const statusBadgeMap = {
+        active: `<span class="badge-stock-green" style="font-size:0.8rem;">Active</span>`,
+        pending: `<span class="badge bg-warning text-dark">Pending</span>`,
+        rejected: `<span class="badge bg-danger">Rejected</span>`,
+        inactive: `<span class="badge bg-secondary">Deactivated</span>`
+      };
+      const statusBadge = statusBadgeMap[u.status] || `<span class="badge bg-light text-dark border">${u.status}</span>`;
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><strong class="text-dark">${u.id || 'USR-001'}</strong></td>
+        <td><strong class="text-dark">${u.user_id}</strong></td>
         <td>
-          <div class="fw-bold text-dark">${u.fullName} ${isSelf ? '<span class="badge bg-light text-muted border ms-1">You</span>' : ''}</div>
+          <div class="fw-bold text-dark">${u.full_name || ''} ${isSelf ? '<span class="badge bg-light text-muted border ms-1">You</span>' : ''}</div>
           <div class="small text-muted">${u.email || ''}</div>
         </td>
         <td><code class="text-dark fs-6">${u.username}</code></td>
@@ -1457,15 +1663,15 @@
         <td>
           <div class="d-flex flex-wrap gap-1">
             ${isSelf ? `
-              <span class="small text-muted fst-italic">Primary Administrator</span>
+              <span class="small text-muted fst-italic">This is you</span>
             ` : `
-              <button class="btn btn-sm ${u.status === 'Deactivated' ? 'btn-outline-success' : 'btn-outline-warning'} py-1 px-2" onclick="window.PharmaCastApp.toggleUserStatus('${u.id}')" title="Toggle account access">
-                <i class="bi ${u.status === 'Deactivated' ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i> ${u.status === 'Deactivated' ? 'Activate' : 'Deactivate'}
+              <button class="btn btn-sm ${u.status === 'inactive' ? 'btn-outline-success' : 'btn-outline-warning'} py-1 px-2" onclick="window.PharmaCastApp.toggleUserStatus(${u.user_id}, '${u.status}')" title="Toggle account access">
+                <i class="bi ${u.status === 'inactive' ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i> ${u.status === 'inactive' ? 'Reactivate' : 'Deactivate'}
               </button>
-              <button class="btn btn-sm btn-outline-primary py-1 px-2" onclick="window.PharmaCastApp.resetUserPassword('${u.id}')" title="Reset password to Password@123">
+              <button class="btn btn-sm btn-outline-primary py-1 px-2" onclick="window.PharmaCastApp.resetUserPassword(${u.user_id})" title="Reset password to Password@123">
                 <i class="bi bi-key-fill"></i> Reset Pass
               </button>
-              <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="window.PharmaCastApp.deleteUserAccount('${u.id}')" title="Permanently delete user">
+              <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="window.PharmaCastApp.deleteUserAccount(${u.user_id})" title="Permanently delete user">
                 <i class="bi bi-trash3-fill"></i>
               </button>
             `}
@@ -1476,39 +1682,36 @@
     });
   }
 
-  function toggleUserStatus(userId) {
-    const users = getUsers();
-    const u = users.find(x => x.id === userId);
-    if (u) {
-      u.status = u.status === 'Deactivated' ? 'Active' : 'Deactivated';
-      setUsers(users);
+  async function toggleUserStatus(userId, currentStatus) {
+    const action = currentStatus === 'inactive' ? 'reactivate' : 'deactivate';
+    try {
+      await api.put(`/api/users/${userId}/${action}`);
       renderAllUsersTable();
-      showToastNotification(`User account ${u.username} is now ${u.status}!`, u.status === 'Active' ? 'success' : 'warning');
+      if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+      showToastNotification(`User account #${userId} has been ${action}d!`, action === 'reactivate' ? 'success' : 'warning');
+    } catch (err) {
+      showToastNotification(`Could not ${action}: ${err.message}`, 'error');
     }
   }
 
-  function resetUserPassword(userId) {
-    const users = getUsers();
-    const u = users.find(x => x.id === userId);
-    if (u) {
-      u.password = 'Password@123';
-      setUsers(users);
-      showToastNotification(`Password for ${u.username} has been reset to "Password@123"`, 'info');
+  async function resetUserPassword(userId) {
+    try {
+      const result = await api.put(`/api/users/${userId}/reset-password`);
+      showToastNotification(result.message || 'Password reset successfully', 'info');
+    } catch (err) {
+      showToastNotification(`Could not reset password: ${err.message}`, 'error');
     }
   }
 
-  function deleteUserAccount(userId) {
-    let users = getUsers();
-    const u = users.find(x => x.id === userId);
-    if (!u) return;
-    if (u.id === 'USR-001' || u.username === 'admin') {
-      showToastNotification('Cannot delete primary Admin account!', 'danger');
-      return;
+  async function deleteUserAccount(userId) {
+    try {
+      await api.del(`/api/users/${userId}/permanent`);
+      renderAllUsersTable();
+      if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+      showToastNotification(`Account #${userId} has been permanently deleted.`, 'warning');
+    } catch (err) {
+      showToastNotification(`Could not delete account: ${err.message}`, 'error');
     }
-    users = users.filter(x => x.id !== userId);
-    setUsers(users);
-    renderAllUsersTable();
-    showToastNotification(`Account ${u.username} has been permanently deleted.`, 'warning');
   }
 
   function openCreateUserModal() {
@@ -1521,37 +1724,23 @@
     if (modal) modal.classList.remove('show');
   }
 
-  function handleCreateUserSubmit(e) {
+  async function handleCreateUserSubmit(e) {
     e.preventDefault();
-    const fullName = document.getElementById('new-user-fullname').value.trim();
+    const full_name = document.getElementById('new-user-fullname').value.trim();
     const email = document.getElementById('new-user-email').value.trim();
     const username = document.getElementById('new-user-username').value.trim();
-    const password = document.getElementById('new-user-password').value || 'Password@123';
-    const role = document.getElementById('new-user-role').value;
+    const password = document.getElementById('new-user-password').value;
+    const role = document.getElementById('new-user-role').value.toLowerCase();
 
-    const users = getUsers();
-    if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
-      showToastNotification('Username already exists!', 'danger');
-      return;
+    try {
+      await api.post('/api/users', { full_name, email, username, password, role });
+      closeCreateUserModal();
+      renderAllUsersTable();
+      if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+      showToastNotification(`New ${role} account "${username}" created and activated!`, 'success');
+    } catch (err) {
+      showToastNotification(`Could not create account: ${err.message}`, 'error');
     }
-
-    const newUser = {
-      id: `USR-${Date.now()}`,
-      username: username,
-      password: password,
-      fullName: fullName,
-      email: email,
-      contactNumber: 'N/A',
-      role: role,
-      status: 'Active',
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-
-    users.push(newUser);
-    setUsers(users);
-    closeCreateUserModal();
-    renderAllUsersTable();
-    showToastNotification(`New ${role} account "${username}" created successfully!`, 'success');
   }
 
   // ─── 8. ADMIN SALES DATA CSV UPLOAD, VALIDATION & PREVIEW ───
@@ -1570,9 +1759,76 @@
         <td><span class="badge bg-light text-dark border">${f.recordCount} records</span></td>
         <td>${f.uploadedBy}</td>
         <td><span class="badge bg-success">${f.status}</span></td>
+        <td>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Dataset actions">
+            ${f.batchId
+              ? `<button class="btn btn-sm btn-luxury-outline" onclick="window.PharmaCastApp.trainOnDataset('${f.id}')"
+                         title="Train the AI demand model using only this dataset">
+                   <i class="bi bi-robot"></i> Train
+                 </button>`
+              : `<button class="btn btn-sm btn-luxury-outline" disabled
+                         title="This dataset was only loaded locally, so there is nothing on the server to train on">
+                   <i class="bi bi-robot"></i> Train
+                 </button>`}
+            <button class="btn btn-sm btn-outline-danger" onclick="window.PharmaCastApp.removeSalesFile('${f.id}')" title="Remove this dataset">
+              <i class="bi bi-trash3-fill"></i> Remove
+            </button>
+          </div>
+        </td>
       `;
       tbody.appendChild(tr);
     });
+  }
+
+  /** Trains the AI model on one uploaded dataset (looked up by its row id). */
+  function trainOnDataset(fileId) {
+    const file = getSalesFiles().find(f => f.id === fileId);
+    if (!file) return;
+
+    if (!file.batchId) {
+      showToastNotification(
+        'That dataset was only loaded into this browser, so there is no server-side data to train on. Upload a CSV/XLSX file to train against real records.',
+        'warning'
+      );
+      return;
+    }
+    trainModelWithDataset({ batchId: file.batchId, fileName: file.fileName });
+  }
+
+  // Deletes an uploaded dataset. If it was a real server-backed upload
+  // (has a batchId from POST /api/sales/upload), this also deletes every
+  // sales_data row tagged with that batch on the backend - not just the
+  // row in this local history list - so removal is a genuine undo, not
+  // just hiding the entry. Demo/pasted datasets never reached the server,
+  // so those are simply dropped from the local list.
+  async function removeSalesFile(fileId) {
+    const files = getSalesFiles();
+    const target = files.find(f => f.id === fileId);
+    if (!target) return;
+
+    if (!confirm(`Remove "${target.fileName}" (${target.recordCount} records)? This cannot be undone.`)) return;
+
+    if (target.batchId) {
+      try {
+        const result = await api.del(`/api/sales/batch/${target.batchId}`);
+        showToastNotification(result.message || 'Dataset removed from server.', 'success');
+      } catch (err) {
+        showToastNotification(`Could not remove from server (${err.message}). Removed from this list only.`, 'error');
+      }
+    }
+
+    setSalesFiles(files.filter(f => f.id !== fileId));
+    renderSalesFilesTable();
+
+    // Removing a dataset reverses the stock it merged in, so pull the
+    // corrected medicine/stock figures back from the server.
+    try { await syncMedicinesFromServer(); } catch (e) { /* offline - keep local view */ }
+    if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+    if (typeof renderPharmacistMedicinesTable === 'function') renderPharmacistMedicinesTable();
+    if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+    if (currentUser && !isUserAdminRole(currentUser) && typeof renderPharmacistDashboard === 'function') {
+      renderPharmacistDashboard();
+    }
   }
 
   // Shows a quick client-side preview of the first 10 rows, then (on confirm)
@@ -1611,20 +1867,61 @@
             fileName: file.name,
             uploadDate: new Date().toISOString().split('T')[0],
             recordCount: result.imported,
-            uploadedBy: currentUser ? `${currentUser.role} (${currentUser.fullName})` : "Admin",
-            status: "Verified & Stored"
+            uploadedBy: currentUser ? `${displayRoleLabel(currentUser)} (${currentUser.fullName})` : "Administrator",
+            status: "Verified & Stored",
+            batchId: result.batchId
           });
           setSalesFiles(files);
           renderSalesFilesTable();
           if (previewArea) previewArea.style.display = 'none';
+
+          // The upload merges quantities into existing medicines and may
+          // create new records for previously unseen dosages - refresh so the
+          // medicine tables reflect that immediately.
+          try { await syncMedicinesFromServer(); } catch (e) { /* offline */ }
+          if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+          if (typeof renderPharmacistMedicinesTable === 'function') renderPharmacistMedicinesTable();
           if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
-          showToastNotification(
-            `${result.imported} historical sales records stored from ${file.name}. Run the AI pipeline to refresh forecasts.`,
-            "success"
-          );
+
+          let msg = `${result.imported} sales records stored from ${file.name}.`;
+          if (result.merged || result.created) {
+            msg += ` ${result.merged || 0} merged into existing medicines`;
+            if (result.created) {
+              const names = (result.created_medicines || [])
+                .map(m => m.dosage ? `${m.name}` : m.name)
+                .slice(0, 3).join(', ');
+              msg += `, ${result.created} new medicine record(s) created`
+                   + (names ? ` (${names}${result.created > 3 ? ', …' : ''})` : '');
+            }
+            msg += '.';
+          }
+          showToastNotification(msg + ' Run the AI pipeline to refresh forecasts.', "success");
         } catch (err) {
-          // Backend reports failures per row - surface them with row numbers.
-          if (Array.isArray(err.details) && err.details.length) {
+          // Re-uploading the same file doubles every stock quantity, so the
+          // server blocks it with a 409. Explain that rather than showing a
+          // bare error, and let the user override deliberately.
+          if (err.duplicate) {
+            showCsvError(`${err.message}\n${err.detail || ''}`);
+            if (confirm(
+              `${err.message}\n\n${err.detail || ''}\n\n`
+              + `Click OK ONLY if this really is new data that happens to look the same — `
+              + `it will be imported again and quantities will add up.\n`
+              + `Click Cancel to keep your data as it is.`
+            )) {
+              confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Uploading...';
+              try {
+                const forced = await api.upload('/api/sales/upload?force=true', file);
+                showToastNotification(
+                  `${forced.imported} record(s) imported (duplicate check overridden).`, 'success'
+                );
+                await syncMedicinesFromServer();
+                renderManageMedicinesTable();
+                renderPharmacistMedicinesTable();
+              } catch (forceErr) {
+                showCsvError(forceErr.message);
+              }
+            }
+          } else if (Array.isArray(err.details) && err.details.length) {
             const lines = err.details
               .slice(0, 20)
               .map(d => `Row #${d.row}: ${(d.errors || []).join(', ')}`);
@@ -1664,26 +1961,48 @@
         return;
       }
 
-      // Check header columns
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const required = ['date', 'medicine', 'quantity'];
-      const isValidHeader = required.every(r => headers.some(h => h.includes(r)));
+      // Strip the UTF-8 BOM Excel adds, otherwise the first header reads as
+      // "﻿Date" and never matches.
+      const headers = lines[0].replace(/^﻿/, '').split(',').map(h => h.trim().toLowerCase());
 
-      if (!isValidHeader) {
-        showCsvError(`Invalid column headers found. Required CSV columns: Date (YYYY-MM-DD), Medicine Name, Quantity Sold. Found: [${lines[0]}]`);
-        return;
+      // Locate columns by header name rather than fixed position, so optional
+      // columns can appear anywhere. Aliases match what the server accepts.
+      const colIndex = (...names) =>
+        headers.findIndex(h => names.some(n => h.includes(n)));
+      const iDate = colIndex('date');
+      const iMed = colIndex('medicine', 'drug', 'item', 'product');
+      const iQty = colIndex('quantity', 'qty', 'sold', 'units');
+      const iDose = colIndex('dosage', 'strength');
+
+      // This is only a preview hint - the SERVER is the authority on whether a
+      // file is valid. Previously an unrecognised header aborted the upload
+      // client-side, so files the backend would happily accept could never be
+      // sent. Now we warn and still let the user upload.
+      const unknownHeaders = [iDate, iMed, iQty].some(i => i === -1);
+      if (unknownHeaders) {
+        showCsvError(
+          `Heads up: couldn't confidently identify the Date / Medicine / Quantity columns from [${lines[0]}]. `
+          + `You can still click "Confirm & Store" — the server will validate the file and report anything wrong.`
+        );
+        const errArea = document.getElementById('csv-upload-error-area');
+        if (errArea) errArea.className = 'alert alert-warning';
+      } else {
+        const errArea = document.getElementById('csv-upload-error-area');
+        if (errArea) errArea.className = 'alert alert-danger';
       }
 
       // Build a first-10-rows preview (the server is the authority on validity).
       const previewRows = [];
       for (let i = 1; i < lines.length && i <= 10; i++) {
         const cols = lines[i].split(',').map(c => c.trim());
+        const dose = iDose !== -1 ? (cols[iDose] || '') : '';
+        const medName = cols[iMed] || '';
         previewRows.push({
           rowNum: i + 1,
-          date: cols[0] || '',
-          medName: cols[1] || '',
-          qty: cols[2] || '',
-          ok: Boolean(cols[0]) && Boolean(cols[1]) && !isNaN(parseInt(cols[2], 10))
+          date: cols[iDate] || '',
+          medName: dose ? `${medName} (${dose})` : medName,
+          qty: cols[iQty] || '',
+          ok: Boolean(cols[iDate]) && Boolean(medName) && !isNaN(parseInt(cols[iQty], 10))
         });
       }
 
@@ -1795,7 +2114,7 @@
           fileName: "sri_lanka_pharmacy_sample_sales.csv",
           uploadDate: new Date().toISOString().split('T')[0],
           recordCount: 360,
-          uploadedBy: currentUser ? `${currentUser.role} (${currentUser.fullName})` : "Admin",
+          uploadedBy: currentUser ? `${displayRoleLabel(currentUser)} (${currentUser.fullName})` : "Administrator",
           status: "Verified & Stored"
         });
         setSalesFiles(files);
@@ -1817,18 +2136,21 @@
   }
 
   function downloadSampleCSV() {
+    // Note rows 2 & 11: same medicine, same dosage -> merged into one record.
+    // Row 12: same medicine, DIFFERENT dosage -> stored as a separate record.
     const csvContent = [
-      "Date,Medicine Name,Quantity Sold",
-      "2026-07-01,Panadol (Paracetamol 500mg),380",
-      "2026-07-02,Piriton (Chlorpheniramine 4mg),185",
-      "2026-07-03,Amoxil (Amoxicillin 500mg),340",
-      "2026-07-04,Metformin (Glucophage 500mg),425",
-      "2026-07-05,Beclo-C (Vitamin C + Zinc 500mg),290",
-      "2026-07-06,Losartan Potassium 50mg),215",
-      "2026-07-07,Cetirizine Hydrochloride 10mg,170",
-      "2026-07-08,Acyclovir 200mg,105",
-      "2026-07-09,Azithromycin 500mg,165",
-      "2026-07-10,Panadol (Paracetamol 500mg),395"
+      "Date,Medicine Name,Dosage,Quantity Sold",
+      "2026-07-01,Panadol (Paracetamol),500mg,380",
+      "2026-07-02,Piriton (Chlorpheniramine),4mg,185",
+      "2026-07-03,Amoxil (Amoxicillin),500mg,340",
+      "2026-07-04,Metformin (Glucophage),500mg,425",
+      "2026-07-05,Beclo-C (Vitamin C + Zinc),500mg,290",
+      "2026-07-06,Losartan Potassium,50mg,215",
+      "2026-07-07,Cetirizine Hydrochloride,10mg,170",
+      "2026-07-08,Acyclovir,200mg,105",
+      "2026-07-09,Azithromycin,500mg,165",
+      "2026-07-10,Panadol (Paracetamol),500mg,395",
+      "2026-07-11,Panadol (Paracetamol),250mg,140"
     ].join('\r\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1852,7 +2174,15 @@
     if (modal) modal.classList.remove('show');
   }
 
-  function submitCustomCsvData() {
+  // Used to only save the pasted rows into localStorage (med.monthlySalesHistory),
+  // fields the real ML pipeline never reads - it trains from the server's
+  // sales_data table via POST /api/sales/upload. So pasting data here, then
+  // clicking Train, silently retrained on whatever was ALREADY on the server
+  // and ignored everything just pasted; the "Ready to train ML model" toast
+  // was not true. This now sends the pasted rows through the exact same
+  // /api/sales/upload endpoint (and File object) the real file-upload button
+  // uses, so pasted data is validated and actually lands in sales_data.
+  async function submitCustomCsvData() {
     const textarea = document.getElementById('custom-csv-textarea');
     if (!textarea) return;
     const text = textarea.value.trim();
@@ -1862,28 +2192,52 @@
     }
 
     const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
-    const parsedRows = [];
-    for (let i = 0; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.trim());
-      if (cols.length >= 3 && !isNaN(parseInt(cols[2], 10))) {
-        parsedRows.push({ date: cols[0], medName: cols[1], qty: parseInt(cols[2], 10) });
+    // The textarea's placeholder shows bare "date, medicine, qty" rows with no
+    // header - but the server's CSV parser treats the first line as headers,
+    // so one has to be added here or every real row (including the first)
+    // would be silently dropped/misread.
+    const csvBody = 'Date,Medicine Name,Quantity Sold\n' + lines.join('\n');
+    const file = new File([csvBody], `pasted_dataset_${Date.now()}.csv`, { type: 'text/csv' });
+
+    const submitBtn = document.querySelector('#modal-custom-csv .btn-luxury-primary');
+    const originalHtml = submitBtn ? submitBtn.innerHTML : null;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Uploading...';
+    }
+
+    try {
+      const result = await api.upload('/api/sales/upload', file);
+
+      const files = getSalesFiles();
+      files.unshift({
+        id: `FILE-${Date.now()}`,
+        fileName: 'custom_pasted_dataset.csv',
+        uploadDate: new Date().toISOString().split('T')[0],
+        recordCount: result.imported,
+        uploadedBy: currentUser ? `${displayRoleLabel(currentUser)} (${currentUser.fullName})` : "Administrator",
+        status: "Verified & Stored",
+        batchId: result.batchId
+      });
+      setSalesFiles(files);
+      renderSalesFilesTable();
+
+      try { await syncMedicinesFromServer(); } catch (e) { /* offline */ }
+      if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+      if (typeof renderPharmacistMedicinesTable === 'function') renderPharmacistMedicinesTable();
+      if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+
+      closeCustomCsvModal();
+      textarea.value = '';
+      showToastNotification(`✓ ${result.imported} record(s) ingested and stored on the server. Run the AI pipeline to train on them.`, "success");
+    } catch (err) {
+      showToastNotification(`Could not ingest pasted data: ${err.message}`, "error");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalHtml;
       }
     }
-    saveUploadedSalesRecords(parsedRows);
-
-    const files = getSalesFiles();
-    files.unshift({
-      id: `FILE-${Date.now()}`,
-      fileName: "custom_pasted_dataset.csv",
-      uploadDate: new Date().toISOString().split('T')[0],
-      recordCount: lines.length,
-      uploadedBy: currentUser ? `${currentUser.role} (${currentUser.fullName})` : "Admin",
-      status: "Verified & Ready"
-    });
-    setSalesFiles(files);
-    renderSalesFilesTable();
-    closeCustomCsvModal();
-    showToastNotification(`Successfully ingested ${lines.length} custom dataset records! Ready to train ML model.`, "success");
   }
 
   let aiTrainingInterval = null;
@@ -1892,7 +2246,18 @@
   // for every server-backed medicine, logging genuine per-medicine results
   // instead of a canned/fake terminal animation.
   let aiTrainingCancelled = false;
-  async function trainModelWithDataset() {
+  /**
+   * Runs the real ML pipeline (ml/predict.py via POST /api/predictions/generate/:id).
+   *
+   * Called with no arguments it trains every medicine in the database.
+   * Called with a dataset descriptor { batchId, fileName } it trains ONLY the
+   * medicines contained in that uploaded dataset, which is much faster and is
+   * what the per-dataset "Train" button uses.
+   *
+   * Available to admins and pharmacists alike - both may upload datasets, so
+   * both may train on them.
+   */
+  async function trainModelWithDataset(dataset) {
     const modal = document.getElementById('modal-ai-training');
     const term = document.getElementById('ai-training-terminal');
     const bar = document.getElementById('ai-training-progress-bar');
@@ -1919,16 +2284,104 @@
     log('> Initializing PharmaCast AI Model Training Engine...', 'text-info');
 
     const meds = await syncMedicinesFromServer();
-    const realMeds = meds.filter(m => /^\d+$/.test(String(m.id)));
+    let realMeds = meds.filter(m => /^\d+$/.test(String(m.id)));
+
+    // Narrow the run to one uploaded dataset when asked.
+    let batchMonthsById = null;
+    if (dataset && dataset.batchId) {
+      log(`> Scope: dataset "${dataset.fileName || dataset.batchId}"`, 'text-info');
+      try {
+        const batchMeds = await api.get(`/api/sales/batch/${dataset.batchId}/medicines`);
+        const allowed = new Set(batchMeds.map(b => String(b.medicine_id)));
+        realMeds = realMeds.filter(m => allowed.has(String(m.id)));
+
+        batchMonthsById = new Map(batchMeds.map(b => [String(b.medicine_id), b]));
+        log(`> This dataset covers ${batchMeds.length} medicine(s):`, 'text-light');
+        batchMeds.forEach(b => {
+          const enough = b.months >= 6;
+          log(`   - ${b.medicine_name}${b.dosage ? ` (${b.dosage})` : ''}: `
+            + `${b.records} row(s) across ${b.months} distinct month(s)`
+            + (enough ? '' : '  <- under the 6-month minimum'),
+            enough ? 'text-light' : 'text-warning');
+        });
+
+        // The model needs >= 6 distinct months. Say so up front rather than
+        // letting every medicine fail one by one with no explanation.
+        const trainable = batchMeds.filter(b => b.months >= 6).length;
+        if (trainable === 0) {
+          log('', 'text-light');
+          log('> Nothing in this dataset can be trained yet.', 'text-warning');
+          log('> The forecasting model needs at least 6 DIFFERENT months of sales per medicine', 'text-warning');
+          log('  (6-11 months -> Linear Regression, 12-23 -> SARIMA, 24+ -> SARIMA+STL).', 'text-warning');
+          log('> Your file covers too few distinct months. Upload sales spanning 6+ months', 'text-warning');
+          log('  and the same medicines will train automatically.', 'text-warning');
+          bar.style.width = '100%';
+          bar.className = 'progress-bar bg-warning';
+          statusText.textContent = 'Not enough monthly history to train.';
+          statusText.className = 'small text-warning fw-bold';
+          finishBtn.style.display = 'inline-block';
+          showToastNotification(
+            'That dataset covers fewer than 6 distinct months, so the AI model cannot be fitted yet.',
+            'warning'
+          );
+          return;
+        }
+        log(`> ${trainable} of ${batchMeds.length} medicine(s) have enough history to train.`, 'text-info');
+      } catch (err) {
+        log(`> Could not read that dataset (${err.message}). Nothing trained.`, 'text-danger');
+        statusText.textContent = 'Dataset unavailable.';
+        finishBtn.style.display = 'inline-block';
+        return;
+      }
+    } else {
+      log('> Scope: every medicine in the database', 'text-info');
+
+      // A sales file has many ROWS but the model fits one series per MEDICINE,
+      // and only for medicines with >= 6 distinct months of history. Spell that
+      // funnel out, then train only the eligible ones - otherwise this loop
+      // spawns ml/predict.py thousands of times just to collect 422s.
+      try {
+        const elig = await api.get('/api/sales/trainable');
+        log('', 'text-light');
+        log(`> ${elig.total_records.toLocaleString()} sales row(s) in the database`, 'text-light');
+        log(`>   -> covering ${elig.total_medicines.toLocaleString()} distinct medicine(s)`, 'text-light');
+        log(`>   -> of which ${elig.eligible_count.toLocaleString()} have 6+ distinct months and CAN be trained`, 'text-info');
+        log(`>   -> ${elig.ineligible_count.toLocaleString()} have too little history and will be skipped`, 'text-warning');
+        log('', 'text-light');
+        log('  The model forecasts one time-series per medicine, not per row, so the', 'text-secondary');
+        log('  medicine count - not the row count - is what gets trained.', 'text-secondary');
+        log('', 'text-light');
+
+        if (elig.eligible_count === 0) {
+          log('> Nothing can be trained yet.', 'text-warning');
+          log('> Every medicine has fewer than 6 different months of sales.', 'text-warning');
+          log('  (6-11 months -> Linear Regression, 12-23 -> SARIMA, 24+ -> SARIMA+STL)', 'text-warning');
+          bar.style.width = '100%';
+          bar.className = 'progress-bar bg-warning';
+          statusText.textContent = 'Not enough monthly history to train.';
+          statusText.className = 'small text-warning fw-bold';
+          finishBtn.style.display = 'inline-block';
+          return;
+        }
+
+        const allowed = new Set(elig.medicines.filter(r => r.months >= 6).map(r => String(r.medicine_id)));
+        realMeds = realMeds.filter(m => allowed.has(String(m.id)));
+      } catch (err) {
+        log(`> Could not pre-check training eligibility (${err.message}); training every medicine instead.`, 'text-warning');
+      }
+    }
 
     if (realMeds.length === 0) {
-      log('> No server-backed medicines found. Log in as admin and add medicines via Manage Medicines first.', 'text-warning');
+      log(dataset && dataset.batchId
+        ? '> No medicines from that dataset are still in the database (they may have been removed).'
+        : '> No server-backed medicines found. Add medicines via Manage Medicines, or upload a sales dataset first.',
+        'text-warning');
       statusText.textContent = 'Nothing to train.';
       finishBtn.style.display = 'inline-block';
       return;
     }
 
-    log(`> Found ${realMeds.length} medicine(s) in the database. Requesting sales_data + running ml/predict.py for each...`, 'text-light');
+    log(`> Training ${realMeds.length} eligible medicine(s). Requesting sales_data + running ml/predict.py for each...`, 'text-light');
 
     let completed = 0;
     let succeeded = 0;
@@ -1942,7 +2395,7 @@
         const token = getRealAuthToken();
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`/api/predictions/generate/${med.id}`, { method: 'POST', headers });
+        const res = await fetch(apiUrl(`/api/predictions/generate/${med.id}`), { method: 'POST', headers });
         const body = await res.json().catch(() => ({}));
 
         if (res.status === 422 || body.status === 'insufficient_data') {
@@ -1964,12 +2417,16 @@
     }
 
     const meanConfidence = confidences.length ? (confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100 : 0;
-    bar.className = 'progress-bar bg-success';
-    statusText.textContent = 'AI Model Training Complete!';
-    statusText.className = 'small text-success fw-bold';
-    log(`> SUCCESS! ${succeeded}/${realMeds.length} medicine forecasts generated by the real ML pipeline. Mean confidence = ${meanConfidence.toFixed(1)}%.`, 'text-success fw-bold mt-1');
+    const anyTrained = succeeded > 0;
+    bar.className = anyTrained ? 'progress-bar bg-success' : 'progress-bar bg-warning';
+    statusText.textContent = anyTrained ? 'AI Model Training Complete!' : 'Finished — but nothing could be trained.';
+    statusText.className = anyTrained ? 'small text-success fw-bold' : 'small text-warning fw-bold';
+    const scopeLabel = dataset && dataset.batchId
+      ? ` for dataset "${dataset.fileName || dataset.batchId}"`
+      : '';
+    log(`> SUCCESS! ${succeeded}/${realMeds.length} medicine forecasts generated by the real ML pipeline${scopeLabel}. Mean confidence = ${meanConfidence.toFixed(1)}%.`, 'text-success fw-bold mt-1');
     finishBtn.style.display = 'inline-block';
-    showToastNotification(`✓ AI pipeline run complete: ${succeeded}/${realMeds.length} medicines forecast using the real backend model.`, 'success');
+    showToastNotification(`✓ Training complete: ${succeeded}/${realMeds.length} medicines forecast${scopeLabel}.`, 'success');
   }
 
   function closeAiTrainingModal() {
@@ -1990,12 +2447,113 @@
   }
 
   // ─── 9. ADMIN MANAGE MEDICINES (CRUD) ───
+  // FR20 on the admin side: current search term for the Manage Medicines table.
+  let adminMedicineSearchTerm = '';
+
+  // A real upload can create thousands of medicines (a 7000+ row Sri Lankan
+  // sales dataset produced ~2969 distinct products). Earlier this list was
+  // silently truncated to the first 50 matches with no way to see the rest,
+  // which looked exactly like "my upload didn't finish" even though every
+  // row had been saved. MED_PAGE_SIZE + the pagination helper below replace
+  // that hard cap with real Prev/Next paging so nothing is hidden.
+  const MED_PAGE_SIZE = 50;
+
+  /** Case-insensitive partial match across name, description and dosage. */
+  function filterMedicinesByTerm(meds, term) {
+    const q = String(term || '').trim().toLowerCase();
+    if (!q) return meds;
+    return meds.filter(m =>
+      String(m.name || '').toLowerCase().includes(q) ||
+      String(m.description || '').toLowerCase().includes(q) ||
+      String(m.dosage || '').toLowerCase().includes(q) ||
+      String(m.category || '').toLowerCase().includes(q)
+    );
+  }
+
+  /**
+   * Renders a small Prev / Page X of Y / Next control into `containerId` and
+   * wires the buttons to `onChange(newPage)`. `total` is the full (post-
+   * filter, pre-slice) result count; `page` is 0-indexed.
+   */
+  function renderMedicinePagination(containerId, page, total, onChangeName) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const totalPages = Math.max(1, Math.ceil(total / MED_PAGE_SIZE));
+    if (total <= MED_PAGE_SIZE) { el.innerHTML = ''; return; }
+    const start = page * MED_PAGE_SIZE + 1;
+    const end = Math.min(total, (page + 1) * MED_PAGE_SIZE);
+    el.innerHTML = `
+      <div class="small text-muted">Showing ${start}–${end} of ${total}</div>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Pagination">
+        <button class="btn btn-luxury-outline py-1 px-3" ${page <= 0 ? 'disabled' : ''}
+                onclick="window.PharmaCastApp.${onChangeName}(-1)">
+          <i class="bi bi-chevron-left"></i> Prev
+        </button>
+        <button class="btn btn-luxury-outline py-1 px-3" disabled>Page ${page + 1} of ${totalPages}</button>
+        <button class="btn btn-luxury-outline py-1 px-3" ${page >= totalPages - 1 ? 'disabled' : ''}
+                onclick="window.PharmaCastApp.${onChangeName}(1)">
+          Next <i class="bi bi-chevron-right"></i>
+        </button>
+      </div>`;
+  }
+
+  let adminMedicinePage = 0;
+
+  function changeAdminMedicinePage(delta) {
+    adminMedicinePage += delta;
+    if (adminMedicinePage < 0) adminMedicinePage = 0;
+    renderManageMedicinesTable();
+  }
+
+  function handleAdminMedicineSearch(term) {
+    adminMedicineSearchTerm = term;
+    adminMedicinePage = 0;
+    renderManageMedicinesTable();
+  }
+
+  function clearAdminMedicineSearch() {
+    adminMedicineSearchTerm = '';
+    adminMedicinePage = 0;
+    const input = document.getElementById('admin-medicine-search');
+    if (input) input.value = '';
+    renderManageMedicinesTable();
+  }
+
   function renderManageMedicinesTable() {
     const tbody = document.getElementById('admin-medicines-tbody');
     if (!tbody) return;
 
-    const meds = getMedicines();
+    const allMeds = getMedicines();
+    // FR20: search narrows the set; pagination (not a hard cap) shows all of
+    // it 50 rows at a time so a large upload never "disappears" from view.
+    const matched = filterMedicinesByTerm(allMeds, adminMedicineSearchTerm);
+    const totalPages = Math.max(1, Math.ceil(matched.length / MED_PAGE_SIZE));
+    if (adminMedicinePage > totalPages - 1) adminMedicinePage = totalPages - 1;
+    if (adminMedicinePage < 0) adminMedicinePage = 0;
+    const meds = matched.slice(adminMedicinePage * MED_PAGE_SIZE, (adminMedicinePage + 1) * MED_PAGE_SIZE);
     tbody.innerHTML = '';
+
+    const statusEl = document.getElementById('admin-medicine-search-status');
+    if (statusEl) {
+      if (!adminMedicineSearchTerm.trim()) {
+        statusEl.textContent = `Showing all ${allMeds.length} medicines`;
+      } else {
+        statusEl.textContent = `${matched.length} match${matched.length === 1 ? '' : 'es'}`;
+      }
+    }
+    renderMedicinePagination('admin-medicine-pagination', adminMedicinePage, matched.length, 'changeAdminMedicinePage');
+
+    // FR20: explicit "Medicine Not Found" feedback rather than a blank table.
+    if (meds.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            <i class="bi bi-search me-2"></i>
+            Medicine Not Found${adminMedicineSearchTerm.trim() ? ` for "${adminMedicineSearchTerm.trim()}"` : ''}.
+          </td>
+        </tr>`;
+      return;
+    }
 
     meds.forEach(m => {
       let badgeHtml = '';
@@ -2010,6 +2568,7 @@
           <div class="font-heading text-dark">${m.name}</div>
           <div class="small text-muted">${m.description}</div>
         </td>
+        <td>${m.dosage ? `<span class="badge bg-success-subtle text-success border border-success-subtle">${m.dosage}</span>` : '<span class="text-muted small">-</span>'}</td>
         <td><span class="badge bg-light text-dark border">${m.category}</span></td>
         <td>${badgeHtml}</td>
         <td>${m.lastUpdated}</td>
@@ -2028,6 +2587,251 @@
     });
   }
 
+  /* ─── PHARMACIST MEDICINE LIBRARY ───
+     Same search behaviour as the admin table (FR20), plus the ability to
+     remove medicines that arrived via a dataset upload. Catalogue medicines
+     are shown but not removable by a pharmacist - the server enforces this
+     too, so hiding the button is a UI nicety rather than the actual control. */
+  let pharmacistMedicineSearchTerm = '';
+  let pharmacistUploadedOnly = false;
+  let pharmacistMedicinePage = 0;
+
+  function changePharmacistMedicinePage(delta) {
+    pharmacistMedicinePage += delta;
+    if (pharmacistMedicinePage < 0) pharmacistMedicinePage = 0;
+    renderPharmacistMedicinesTable();
+  }
+
+  function handlePharmacistMedicineSearch(term) {
+    pharmacistMedicineSearchTerm = term;
+    pharmacistMedicinePage = 0;
+    renderPharmacistMedicinesTable();
+  }
+
+  function clearPharmacistMedicineSearch() {
+    pharmacistMedicineSearchTerm = '';
+    pharmacistMedicinePage = 0;
+    const input = document.getElementById('pharmacist-medicine-search');
+    if (input) input.value = '';
+    renderPharmacistMedicinesTable();
+  }
+
+  function togglePharmacistUploadedOnly(checked) {
+    pharmacistUploadedOnly = Boolean(checked);
+    pharmacistMedicinePage = 0;
+    renderPharmacistMedicinesTable();
+  }
+
+  function renderPharmacistMedicinesTable() {
+    const tbody = document.getElementById('pharmacist-medicines-tbody');
+    if (!tbody) return;
+
+    let pool = getMedicines();
+    if (pharmacistUploadedOnly) pool = pool.filter(m => m.createdFromUpload);
+
+    const matched = filterMedicinesByTerm(pool, pharmacistMedicineSearchTerm);
+    const totalPages = Math.max(1, Math.ceil(matched.length / MED_PAGE_SIZE));
+    if (pharmacistMedicinePage > totalPages - 1) pharmacistMedicinePage = totalPages - 1;
+    if (pharmacistMedicinePage < 0) pharmacistMedicinePage = 0;
+    const meds = matched.slice(pharmacistMedicinePage * MED_PAGE_SIZE, (pharmacistMedicinePage + 1) * MED_PAGE_SIZE);
+    tbody.innerHTML = '';
+
+    const statusEl = document.getElementById('pharmacist-medicine-search-status');
+    if (statusEl) {
+      if (!pharmacistMedicineSearchTerm.trim()) {
+        statusEl.textContent = `Showing all ${pool.length} medicines`;
+      } else {
+        statusEl.textContent = `${matched.length} match${matched.length === 1 ? '' : 'es'}`;
+      }
+    }
+    renderMedicinePagination('pharmacist-medicine-pagination', pharmacistMedicinePage, matched.length, 'changePharmacistMedicinePage');
+
+    if (meds.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            <i class="bi bi-search me-2"></i>
+            Medicine Not Found${pharmacistMedicineSearchTerm.trim() ? ` for "${pharmacistMedicineSearchTerm.trim()}"` : ''}.
+          </td>
+        </tr>`;
+      return;
+    }
+
+    meds.forEach(m => {
+      let badgeHtml;
+      if (m.stock === 0) badgeHtml = `<span class="badge-stock-red">Out of Stock (0)</span>`;
+      else if (m.stock <= 10) badgeHtml = `<span class="badge-stock-yellow">Low Stock (${m.stock})</span>`;
+      else badgeHtml = `<span class="badge-stock-green">In Stock (${m.stock})</span>`;
+
+      const fromUpload = Boolean(m.createdFromUpload);
+      const sourceHtml = fromUpload
+        ? `<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-cloud-arrow-up-fill me-1"></i>Uploaded dataset</span>`
+        : `<span class="badge bg-light text-muted border">Catalogue</span>`;
+
+      // Actions a pharmacist can take on a medicine. All are permitted for the
+      // pharmacist role server-side, including Remove - the confirm dialog is
+      // what protects against an accidental delete.
+      const removeBtn = `<button class="btn btn-sm btn-outline-danger py-1 px-2"
+                   onclick="window.PharmaCastApp.removeMedicineFromDataset('${m.id}')"
+                   title="Remove this medicine, its sales history and its forecasts">
+             <i class="bi bi-trash3-fill"></i> Remove
+           </button>`;
+
+      const actionHtml = `
+        <div class="btn-group btn-group-sm" role="group" aria-label="Medicine actions">
+          <button class="btn btn-sm btn-luxury-outline py-1 px-2"
+                  onclick="window.PharmaCastApp.openMedicineDetail('${m.id}')"
+                  title="View full details, AI demand forecast and re-order recommendation">
+            <i class="bi bi-eye-fill"></i> View
+          </button>
+          <button class="btn btn-sm btn-luxury-outline py-1 px-2"
+                  onclick="window.PharmaCastApp.refreshForecastFor('${m.id}')"
+                  title="Re-run the AI demand forecast for this medicine">
+            <i class="bi bi-arrow-repeat"></i>
+          </button>
+          <button class="btn btn-sm btn-luxury-outline py-1 px-2"
+                  onclick="window.PharmaCastApp.openStockModal('${m.id}')"
+                  title="Update the current stock quantity">
+            <i class="bi bi-box-seam-fill"></i>
+          </button>
+          ${removeBtn}
+        </div>`;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong class="text-dark">${m.id}</strong></td>
+        <td>
+          <div class="font-heading text-dark">${m.name}</div>
+          <div class="small text-muted">${m.description || ''}</div>
+        </td>
+        <td>${m.dosage ? `<span class="badge bg-success-subtle text-success border border-success-subtle">${m.dosage}</span>` : '<span class="text-muted small">-</span>'}</td>
+        <td><span class="badge bg-light text-dark border">${m.category}</span></td>
+        <td>${badgeHtml}</td>
+        <td>${sourceHtml}</td>
+        <td>${actionHtml}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  /** Re-runs the AI demand forecast for one medicine (FR28-FR30). */
+  async function refreshForecastFor(medId) {
+    const med = getMedicines().find(m => m.id === medId);
+    const label = med ? med.name : `#${medId}`;
+
+    if (!/^\d+$/.test(String(medId))) {
+      showToastNotification('This medicine only exists locally, so there is no server-side data to forecast yet.', 'warning');
+      return;
+    }
+
+    showToastNotification(`Running the AI forecast for ${label}…`, 'info');
+    try {
+      const headers = {};
+      const token = getRealAuthToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(apiUrl(`/api/predictions/generate/${medId}`), { method: 'POST', headers });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 422) {
+        // Not an error - just not enough history for the model tiers yet.
+        showToastNotification(
+          `Not enough sales history for ${label}: ${data.months_available || 0} month(s) available, ${data.minimum_required || 6} required.`,
+          'warning'
+        );
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || `Forecast failed (${res.status})`);
+
+      showToastNotification(
+        `Forecast updated for ${label} using ${data.model_type || 'the AI model'} `
+        + `(${data.months_available || 0} months of history).`,
+        'success'
+      );
+    } catch (err) {
+      showToastNotification(`Could not run the forecast: ${err.message}`, 'error');
+    }
+  }
+
+  /* ─── Stock update (FR22 / FR23) ─── */
+  function openStockModal(medId) {
+    const med = getMedicines().find(m => m.id === medId);
+    if (!med) return;
+
+    document.getElementById('stock-modal-med-id').value = med.id;
+    document.getElementById('stock-modal-med-name').textContent =
+      `${med.name}${med.dosage ? ` (${med.dosage})` : ''}`;
+    document.getElementById('stock-modal-quantity').value = med.stock != null ? med.stock : 0;
+
+    const modal = document.getElementById('modal-update-stock');
+    if (modal) modal.classList.add('show');
+  }
+
+  function closeStockModal() {
+    const modal = document.getElementById('modal-update-stock');
+    if (modal) modal.classList.remove('show');
+  }
+
+  async function saveStockUpdate(e) {
+    e.preventDefault();
+    const medId = document.getElementById('stock-modal-med-id').value;
+    const quantity = parseInt(document.getElementById('stock-modal-quantity').value, 10);
+
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      showToastNotification('Quantity must be zero or a positive whole number.', 'warning');
+      return;
+    }
+
+    try {
+      await api.put(`/api/stock/${medId}`, { quantity });
+      closeStockModal();
+      showToastNotification('Stock updated.', 'success');
+      await syncMedicinesFromServer();
+      renderPharmacistMedicinesTable();
+      if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+      if (currentUser && !isUserAdminRole(currentUser) && typeof renderPharmacistDashboard === 'function') {
+        renderPharmacistDashboard();
+      } else if (typeof renderAdminDashboard === 'function') {
+        renderAdminDashboard();
+      }
+    } catch (err) {
+      showToastNotification(`Could not update stock: ${err.message}`, 'error');
+    }
+  }
+
+  /** Removes a medicine along with its sales history, stock row and forecasts. */
+  async function removeMedicineFromDataset(medId) {
+    const med = getMedicines().find(m => m.id === medId);
+    const label = med ? `${med.name}${med.dosage ? ` (${med.dosage})` : ''}` : `#${medId}`;
+    const fromUpload = med && med.createdFromUpload;
+
+    // Catalogue medicines are shared inventory rather than one pharmacist's
+    // import, so the prompt says so explicitly before it is removed.
+    const scopeNote = fromUpload
+      ? 'This medicine came from an uploaded dataset.'
+      : 'This is a catalogue medicine — removing it affects everyone using this system.';
+
+    if (!confirm(
+      `Remove "${label}"?\n\n${scopeNote}\n\n`
+      + 'Its sales history, stock record and AI forecasts will also be deleted. This cannot be undone.'
+    )) return;
+
+    try {
+      const result = await api.del(`/api/medicines/${medId}`);
+      showToastNotification(result.message || 'Medicine removed.', 'success');
+      await syncMedicinesFromServer();
+      renderPharmacistMedicinesTable();
+      if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+      if (currentUser && isUserAdminRole(currentUser)) {
+        if (typeof renderAdminDashboard === 'function') renderAdminDashboard();
+      } else if (typeof renderPharmacistDashboard === 'function') {
+        renderPharmacistDashboard();
+      }
+    } catch (err) {
+      showToastNotification(`Could not remove medicine: ${err.message}`, 'error');
+    }
+  }
+
   function openAddMedicineModal() {
     document.getElementById('modal-med-title').textContent = "Add New Medicine Record";
     document.getElementById('med-form-id').value = "";
@@ -2036,6 +2840,10 @@
     document.getElementById('med-form-description').value = "";
     document.getElementById('med-form-stock').value = "100";
     document.getElementById('med-form-price').value = "450";
+    const dosageEl = document.getElementById('med-form-dosage');
+    if (dosageEl) dosageEl.value = "";
+    const mfrEl = document.getElementById('med-form-manufacturer');
+    if (mfrEl) mfrEl.value = "";
 
     const modal = document.getElementById('modal-medicine-crud');
     if (modal) modal.classList.add('show');
@@ -2053,6 +2861,10 @@
     document.getElementById('med-form-description').value = m.description;
     document.getElementById('med-form-stock').value = m.stock;
     document.getElementById('med-form-price').value = m.unitPriceLKR || 450;
+    const dosageEl = document.getElementById('med-form-dosage');
+    if (dosageEl) dosageEl.value = m.dosage || '';
+    const mfrEl = document.getElementById('med-form-manufacturer');
+    if (mfrEl) mfrEl.value = m.manufacturer || '';
 
     const modal = document.getElementById('modal-medicine-crud');
     if (modal) modal.classList.add('show');
@@ -2071,6 +2883,11 @@
     const stockVal = parseInt(document.getElementById('med-form-stock').value, 10) || 0;
     const priceVal = parseInt(document.getElementById('med-form-price').value, 10) || 450;
 
+    const dosageEl = document.getElementById('med-form-dosage');
+    const mfrEl = document.getElementById('med-form-manufacturer');
+    const dosageVal = dosageEl ? dosageEl.value.trim() : '';
+    const mfrVal = mfrEl ? mfrEl.value.trim() : '';
+
     const existing = idVal ? getMedicines().find(m => m.id === idVal) : null;
     const payload = {
       medicine_name: nameVal,
@@ -2078,7 +2895,9 @@
       category: catVal,
       unit_price: priceVal,
       reorder_level: (existing && existing.reorderLevel != null) ? existing.reorderLevel : 20,
-      current_stock: stockVal
+      current_stock: stockVal,
+      dosage: dosageVal || null,
+      manufacturer: mfrVal || null
     };
 
     try {
@@ -2166,10 +2985,14 @@
       pharmacyName: result.pharmacy_name,
       status: result.status
     };
+    // Session-scoped storage only (matches where the auth token lives).
+    // This used to also write to localStorage, which persists after the
+    // browser fully closes - the token in sessionStorage would be gone on
+    // the next visit, but this cached user object would still be there,
+    // so the UI rendered a "logged in" dashboard where every API call
+    // silently 401'd. Keeping both in sessionStorage keeps them in sync.
     sessionStorage.setItem('pc_current_user', JSON.stringify(currentUser));
     sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
-    localStorage.setItem('pc_current_user', JSON.stringify(currentUser));
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
     updateNavbarState();
     startInactivityTimer();
 
@@ -2273,40 +3096,6 @@
     // Show luxury modal
     const modal = document.getElementById('modal-registration-success');
     if (modal) modal.classList.add('show');
-  }
-
-  // ─── INSTANT ADMIN ACCOUNT CREATION & LAUNCH ("create the admin account") ───
-  function createDefaultAdminAccount() {
-    let users = getUsers();
-    let adminUser = users.find(u => u.username === 'admin');
-    if (!adminUser) {
-      adminUser = {
-        id: "USR-001",
-        username: "admin",
-        password: "admin",
-        fullName: "Dr. Saman Weerasinghe",
-        email: "admin@pharmacast.lk",
-        contactNumber: "0770000001",
-        role: "Admin",
-        status: "Active",
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      users.unshift(adminUser);
-      setUsers(users);
-    } else {
-      adminUser.status = "Active";
-      adminUser.password = "admin";
-      setUsers(users);
-    }
-
-    currentUser = adminUser;
-    sessionStorage.setItem('pc_current_user', JSON.stringify(adminUser));
-    sessionStorage.setItem('currentUser', JSON.stringify(adminUser));
-    localStorage.setItem('pc_current_user', JSON.stringify(adminUser));
-    localStorage.setItem('currentUser', JSON.stringify(adminUser));
-    updateNavbarState();
-    showPage('page-admin-dashboard');
-    showToastNotification("✓ Active Administrator Account (admin / admin) created & logged in!", "success");
   }
 
   function showRegisterError(msg) {
@@ -2531,40 +3320,13 @@
     }, 4500);
   }
 
-  // Quick evaluator demo switcher
-  function switchDemoRole(role) {
-    if (role === 'Admin' || String(role).toLowerCase().includes('admin')) {
-      currentUser = getUsers().find(u => isUserAdminRole(u)) || DEFAULT_USERS[0];
-      sessionStorage.setItem('pc_current_user', JSON.stringify(currentUser));
-      sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
-      localStorage.setItem('pc_current_user', JSON.stringify(currentUser));
-      localStorage.setItem('currentUser', JSON.stringify(currentUser));
-      updateNavbarState();
-      showPage('page-admin-dashboard');
-      // This switcher only changes the local UI role - it does NOT grant a real
-      // server session, so admin API actions (approvals, uploads, medicine CRUD,
-      // AI generation) will still be rejected with 401/403 until a real login.
-      showToastNotification("Switched to Admin VIEW only - log in properly for admin actions to work.", "warning");
-    } else if (role === 'Pharmacist') {
-      currentUser = getUsers().find(u => u.role === 'Pharmacist') || DEFAULT_USERS[1];
-      sessionStorage.setItem('pc_current_user', JSON.stringify(currentUser));
-      updateNavbarState();
-      showPage('page-pharmacist-dashboard');
-      showToastNotification("Switched to Pharmacist view (Kasun Perera)", "success");
-    } else {
-      currentUser = null;
-      sessionStorage.removeItem('pc_current_user');
-      updateNavbarState();
-      showPage('page-home');
-      showToastNotification("Switched to Public Visitor view", "info");
-    }
-  }
-
   // ─── 13. EXPOSE PUBLIC APPLICATION API ───
   window.PharmaCastApp = {
     showPage,
     goBackFromUpload,
     focusSearchInput,
+    openForecastShortcut,
+    openStockShortcut,
     openMedicineDetail,
     placeRecommendedOrder,
     approveRequest,
@@ -2581,11 +3343,24 @@
     closeRegistrationSuccessModal,
     handleLogout,
     handleFileUpload,
+    removeSalesFile,
+    handleAdminMedicineSearch,
+    clearAdminMedicineSearch,
+    changeAdminMedicinePage,
+    handlePharmacistMedicineSearch,
+    clearPharmacistMedicineSearch,
+    changePharmacistMedicinePage,
+    togglePharmacistUploadedOnly,
+    removeMedicineFromDataset,
+    renderPharmacistMedicinesTable,
+    refreshForecastFor,
+    openStockModal,
+    closeStockModal,
+    saveStockUpdate,
     loadDemoCSV,
     downloadSampleCSV,
     testShowTimeoutWarning,
     dismissTimeoutWarning,
-    switchDemoRole,
     toggleUserStatus,
     resetUserPassword,
     deleteUserAccount,
@@ -2596,27 +3371,126 @@
     closeCustomCsvModal,
     submitCustomCsvData,
     trainModelWithDataset,
+    trainOnDataset,
     closeAiTrainingModal,
-    finishAiTraining,
-    createDefaultAdminAccount
+    finishAiTraining
   };
 
+  /* ─── iOS navbar behaviours ───
+     1. The bar becomes more opaque once the page scrolls away from the top,
+        the way a UINavigationBar does.
+     2. Tapping a segment marks it active (the white "thumb"), and the
+        segmented track scrolls it into view when it's off-screen. */
+  function initIOSNavbar() {
+    const bar = document.querySelector('.navbar-luxury');
+    if (!bar) return;
+
+    const applyScrollState = () => {
+      bar.classList.toggle('is-scrolled', window.scrollY > 4);
+    };
+    applyScrollState();
+    window.addEventListener('scroll', applyScrollState, { passive: true });
+
+    document.querySelectorAll('.nav-segment').forEach(segment => {
+      segment.addEventListener('click', (e) => {
+        const item = e.target.closest('.nav-link-item');
+        if (!item || !segment.contains(item)) return;
+        segment.querySelectorAll('.nav-link-item').forEach(el => el.classList.remove('active'));
+        item.classList.add('active');
+        item.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      });
+    });
+  }
+
+  /** Highlights whichever nav pill corresponds to the page now on screen. */
+  function syncActiveNavItem(pageId) {
+    // page-medicine-detail isn't its own nav pill - it's reached via the
+    // "Forecasts" or "Stock" shortcuts, so keep whichever of those two was
+    // actually clicked lit up instead of falling through to "no match" and
+    // stripping the active state the moment the page switches (see
+    // lastDetailEntryPoint above).
+    if (pageId === 'page-medicine-detail') {
+      const fnName = lastDetailEntryPoint === 'stock' ? 'openStockShortcut' : 'openForecastShortcut';
+      document.querySelectorAll('.nav-segment .nav-link-item').forEach(el => {
+        const onclick = el.getAttribute('onclick') || '';
+        el.classList.toggle('active', onclick.includes(fnName));
+      });
+      return;
+    }
+
+    const map = {
+      'page-home': 'page-home',
+      'page-register': 'page-register',
+      'page-pharmacist-dashboard': 'page-pharmacist-dashboard',
+      'page-admin-dashboard': 'page-admin-dashboard',
+      'page-admin-approvals': 'page-admin-approvals',
+      'page-admin-medicines': 'page-admin-medicines',
+      'page-pharmacist-medicines': 'page-pharmacist-medicines',
+      'page-admin-upload': 'page-admin-upload'
+    };
+    const target = map[pageId];
+    document.querySelectorAll('.nav-segment .nav-link-item').forEach(el => {
+      const onclick = el.getAttribute('onclick') || '';
+      const href = el.getAttribute('href') || '';
+      const matches = target && (onclick.includes(`'${target}'`) || href.includes(`#${target}`));
+      el.classList.toggle('active', Boolean(matches));
+    });
+  }
+
   // Initialize on load
+  /**
+   * If this page isn't being served BY the real backend (servedByRealApi is
+   * false - e.g. opened via VS Code's "Go Live"/Live Server or Live Preview,
+   * which only serves static files on their own port, typically 5500), every
+   * /api/* call depends on the real Node server ALSO running separately on
+   * port REAL_API_PORT. When it isn't, login, Forecasts, Stock, Train Model -
+   * everything that touches the backend - just silently does nothing, with
+   * no indication why. This checks once on load and says so plainly instead
+   * of leaving it to be discovered one broken button at a time.
+   */
+  async function warnIfBackendUnreachable() {
+    if (servedByRealApi) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/stats`, { method: 'GET', cache: 'no-store' });
+      if (res.ok) return;
+    } catch (e) { /* fall through to banner */ }
+
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;'
+      + 'background:#991b1b;color:#fff;padding:10px 20px;font:600 13px/1.5 -apple-system,sans-serif;'
+      + 'text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.35);';
+    banner.innerHTML =
+      `⚠️ This page is open via <code>${window.location.origin}</code> (looks like VS Code "Go Live" / Live Server, `
+      + `not the real PharmaCast server) — login, Forecasts, Stock and Train Model will not work from here because `
+      + `the Node backend on port ${REAL_API_PORT} isn't reachable. Run <code>restart-server.bat</code> `
+      + `(or <code>npm start</code>) in the project folder, then open `
+      + `<a href="http://localhost:${REAL_API_PORT}" style="color:#fff;text-decoration:underline;">`
+      + `http://localhost:${REAL_API_PORT}</a> directly in your browser instead of using Go Live.`;
+    document.body.prepend(banner);
+    document.body.style.paddingTop = `${banner.offsetHeight || 44}px`;
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     initAmbientParticles();
     initCursorGlowAura();
     initClickRippleEffect();
     bindSearchHandlers();
     updateNavbarState();
+    initIOSNavbar();
+    warnIfBackendUnreachable();
 
-    // Default route
-    if (currentUser) {
-      if (isUserAdminRole(currentUser)) {
-        showPage('page-admin-dashboard');
-      } else {
-        showPage('page-pharmacist-dashboard');
-      }
-      startInactivityTimer();
+    if (currentUser) startInactivityTimer();
+
+    // Default route. If we were just handed off from the other document
+    // (see crossDocumentFileFor() in showPage()) with a specific page in the
+    // URL hash, honor that instead of falling back to each role's default
+    // landing page.
+    const handoffPageId = window.location.hash ? window.location.hash.slice(1) : null;
+    if (handoffPageId && document.getElementById(handoffPageId)) {
+      showPage(handoffPageId);
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    } else if (currentUser) {
+      showPage(isUserAdminRole(currentUser) ? 'page-admin-dashboard' : 'page-pharmacist-dashboard');
     } else {
       showPage('page-home');
     }

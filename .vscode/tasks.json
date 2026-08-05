@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PharmaCast: Open in browser (localhost:8051)",
+      "type": "shell",
+      "command": "start http://localhost:8051",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "close": true
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "PharmaCast: Start server",
+      "type": "shell",
+      "command": "${workspaceFolder}\\restart-server.bat",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^unused$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting PharmaCast server",
+          "endsPattern": "Connected to SQLite database"
+        }
+      }
+    }
+  ]
+}

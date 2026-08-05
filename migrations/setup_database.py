@@ -76,6 +76,7 @@ CREATE TABLE sales_data (
     sale_date DATE NOT NULL,
     total_amount REAL,
     recorded_by INTEGER,
+    upload_batch TEXT,
     FOREIGN KEY (medicine_id) REFERENCES medicines(medicine_id),
     FOREIGN KEY (recorded_by) REFERENCES users(user_id)
 );
@@ -112,7 +113,7 @@ def hash_password(plain: str) -> str:
 # Sample users (plaintext passwords noted here for test login only)
 users = [
     ('rajesh_pharmacist', 'rajesh@pharmacy.lk', hash_password('Pharma@123'), 'pharmacist', 'Rajesh Kumar', '0771234567', 'City Pharmacy Colombo', 'active'),
-    ('admin', 'priya@pharmacy.lk', hash_password('admin'), 'admin', 'Priya Fernando', '0777654321', 'PharmaCast Admin', 'active'),
+    ('admin', 'admin@pharmacast.lk', hash_password('admin'), 'admin', 'BITBENDERS', '0777654321', 'PharmaCast Administration', 'active'),
     ('kamal_pharmacist', 'kamal@pharmacy.lk', hash_password('Pharma@123'), 'pharmacist', 'Kamal Perera', '0719876543', 'Health Hub Pharmacy', 'active'),
     ('amara_pharmacist', 'amara@pharmacy.lk', hash_password('Pharma@123'), 'pharmacist', 'Amara Silva', '0765432198', 'Wellness Pharmacy', 'pending'),
 ]

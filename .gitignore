@@ -5,3 +5,7 @@ uploads/*
 .env
 __pycache__/
 *.pyc
+server-log.txt
+test-run-output.txt
+diag*.txt
+diag*.bat

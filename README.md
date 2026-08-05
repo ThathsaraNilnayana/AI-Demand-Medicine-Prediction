@@ -110,17 +110,20 @@ with per-row error messages and nothing is written (all-or-nothing transaction).
 ```
 ├── server.js                 # Express app entry point
 ├── config.js / db.js         # Configuration + SQLite helpers
-├── routes/                   # REST API endpoints
-├── middleware/               # Auth (sessions, roles), validation, errors
+├── routes/                   # REST API endpoints (auth, medicines, stock,
+│                              #   sales, predictions, recommendations, users, stats)
+├── middleware/                # Auth (sessions, roles), validation, errors
 ├── services/
 │   └── predictionService.js  # Shared ML invocation + forecast storage
+├── utils/                    # Shared helpers (medicine identity, stock status)
 ├── scripts/
 │   └── precompute_predictions.js   # Nightly cache job
 ├── ml/
 │   └── predict.py            # Tiered forecasting engine
 ├── migrations/
 │   └── setup_database.py     # Schema + seed data
-├── index.html                # Single-page frontend
+├── index.html                # Pharmacist-facing single-page frontend
+├── admin.html                # Admin-facing single-page frontend
 ├── css/ , js/                # Frontend assets
 └── pharmacast.db             # SQLite database
 ```
@@ -134,11 +137,7 @@ with per-row error messages and nothing is written (all-or-nothing transaction).
   (`requireRole('admin')`), with a matching guard in the UI.
 - All SQL uses parameterised queries.
 
-### Known gaps
-
-- The "All Users" admin screen (activate/deactivate, reset password, delete,
-  create user) is still local-only — there are no backend routes for those
-  actions yet.
-- The "Evaluator Test Switcher" bar in `index.html` switches the UI role
-  without a password. It grants **no** real server privileges, but it should be
-  removed before any real deployment or final submission.
+Admin functionality (user approvals, account management, medicine records)
+lives in `admin.html`; `index.html` is the pharmacist-facing app. Both are
+served by the same Express backend and enforce role checks server-side via
+`requireRole('admin')`.

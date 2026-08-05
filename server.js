@@ -19,7 +19,41 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '.')));
+
+// SECURITY: only expose what the frontend actually needs (the two HTML
+// pages plus css/js). The old `express.static(path.join(__dirname, '.'))`
+// served the ENTIRE project root - meaning .env, .git, pharmacast.db (the
+// whole database, including password hashes), db.js, config.js and every
+// route/service file were all directly downloadable over HTTP. Do not widen
+// this without checking what's being exposed.
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
+app.use('/css', express.static(path.join(__dirname, 'css')));
+app.use('/js', express.static(path.join(__dirname, 'js')));
+
+// Request log for every API call - method, path, status and the error body
+// when one is returned. This is what makes "the upload doesn't work" a
+// diagnosable problem instead of a guess: server-log.txt shows whether the
+// request arrived at all, and exactly why it was rejected.
+app.use('/api', (req, res, next) => {
+    const started = Date.now();
+    const chunks = [];
+    const originalJson = res.json.bind(res);
+    res.json = (body) => {
+        chunks.push(body);
+        return originalJson(body);
+    };
+    res.on('finish', () => {
+        const ms = Date.now() - started;
+        let detail = '';
+        if (res.statusCode >= 400 && chunks.length) {
+            try { detail = ' :: ' + JSON.stringify(chunks[0]).slice(0, 400); } catch (e) { /* ignore */ }
+        }
+        console.log(`[api] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${ms}ms)${detail}`);
+    });
+    next();
+});
 
 app.use('/api', authRoutes);
 app.use('/api/medicines', medicinesRoutes);

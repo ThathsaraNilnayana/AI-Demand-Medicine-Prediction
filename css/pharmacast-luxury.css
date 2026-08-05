@@ -143,86 +143,204 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   100% { transform: translate(-40px, -30px) scale(0.95); }
 }
 
-/* ─── Luxury Navigation Bar ─── */
+/* ═══════════════════════════════════════════════════════════════════
+   iOS-STYLE NAVIGATION BAR
+   Translucent "frosted glass" surface, hairline separator, and a
+   segmented-control style link row. Everything is nowrap + horizontally
+   scrollable so labels can never wrap onto a second line, which is what
+   made the old bar look broken at narrower widths.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --ios-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ios-ease: cubic-bezier(0.4, 0.0, 0.2, 1);
+  --nav-height: 60px;
+}
+
 .navbar-luxury {
-  background: var(--bg-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-emerald);
+  /* saturate() is what gives Apple's frosted glass its colour "bloom" */
+  background: rgba(252, 253, 252, 0.72);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
   position: sticky;
   top: 0;
   z-index: 1000;
-  padding: 12px 0;
-  box-shadow: 0 4px 20px -5px rgba(5, 150, 105, 0.08);
-  transition: var(--transition-smooth);
+  padding: 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  transition: background 0.3s var(--ios-ease), box-shadow 0.3s var(--ios-ease);
 }
 
+/* Subtle lift once the page scrolls (toggled by JS). */
+.navbar-luxury.is-scrolled {
+  background: rgba(252, 253, 252, 0.88);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset,
+              0 4px 24px -8px rgba(5, 150, 105, 0.16);
+}
+
+/* Bootstrap caps .container at 1140/1320px, which was squeezing five nav
+   labels into far too little space on wide displays. The bar (and only the
+   bar) gets to use the full viewport width. */
+.navbar-luxury > .container {
+  min-height: var(--nav-height);
+  gap: 16px;
+  max-width: 100%;
+  width: 100%;
+  padding-left: clamp(16px, 3vw, 40px);
+  padding-right: clamp(16px, 3vw, 40px);
+}
+
+/* ─── Brand ─── */
 .navbar-brand-logo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
   text-decoration: none;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .logo-icon-box {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--emerald-primary), var(--emerald-dark));
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;              /* iOS "squircle" proportion */
+  background: linear-gradient(160deg, #10b981, var(--emerald-dark));
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  font-size: 22px;
-  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.35);
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
-  transition: var(--transition-smooth);
+  font-size: 19px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.28),
+              0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  transition: transform 0.4s var(--ios-spring), box-shadow 0.3s var(--ios-ease);
 }
 
+.navbar-brand-logo:active .logo-icon-box { transform: scale(0.92); }
 .navbar-brand-logo:hover .logo-icon-box {
-  transform: rotate(-6deg) scale(1.06);
-  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.45);
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.38), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
+/* Name + subtitle stack vertically so neither can wrap. */
+.logo-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.1;
+  min-width: 0;
 }
 
 .logo-text {
   font-family: 'Outfit', sans-serif;
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: 1.16rem;
+  font-weight: 700;
   color: var(--emerald-dark);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.022em;          /* SF Pro-like optical tightening */
+  white-space: nowrap;
 }
 
 .logo-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
+  font-size: 0.585rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--luxury-gold-dark);
-  background: var(--luxury-gold-light);
-  border: 1px solid var(--border-gold);
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  margin-left: 8px;
+  letter-spacing: 0.055em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-top: 1px;
 }
 
-/* ─── Navigation Links & Buttons ─── */
+/* ─── Segmented-control link row ─── */
+.nav-segment {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-full);
+  background: rgba(118, 118, 128, 0.08);   /* iOS segmented track */
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.nav-segment::-webkit-scrollbar { display: none; }
+
 .nav-link-item {
   color: var(--text-muted);
-  font-weight: 600;
-  font-size: 0.95rem;
-  padding: 8px 16px;
+  font-weight: 550;
+  font-size: 0.815rem;
+  letter-spacing: -0.01em;
+  padding: 7px 13px;
   border-radius: var(--radius-full);
-  transition: var(--transition-smooth);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  white-space: nowrap;               /* the fix for wrapped labels */
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  transition: color 0.2s var(--ios-ease),
+              background 0.25s var(--ios-ease),
+              transform 0.35s var(--ios-spring);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.nav-link-item:hover, .nav-link-item.active {
-  color: var(--emerald-primary);
-  background: var(--emerald-light);
+.nav-link-item i { font-size: 0.94em; opacity: 0.85; }
+
+.nav-link-item:hover {
+  color: var(--emerald-dark);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.nav-link-item:active { transform: scale(0.95); }
+
+/* Selected pill - the white "thumb" of an iOS segmented control. */
+.nav-link-item.active {
+  color: var(--emerald-dark);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1),
+              0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
+.nav-link-item.active i { opacity: 1; }
+
+/* Trailing actions (Logout / Login) sit outside the segmented track. */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 1400px) {
+  .nav-link-item { padding: 7px 11px; font-size: 0.79rem; }
+}
+
+/* Below this the labels are dropped and the bar becomes icon-only, which
+   is far cleaner than letting five text links fight for space. */
+@media (max-width: 1150px) {
+  .nav-link-item .nav-label { display: none; }
+  .nav-link-item { padding: 8px 10px; }
+  .nav-link-item i { font-size: 1.05em; opacity: 1; }
+}
+
+@media (max-width: 991px) {
+  .logo-badge { display: none; }
+  .logo-text { font-size: 1.06rem; }
+}
+
+@media (max-width: 767px) {
+  :root { --nav-height: 54px; }
+  .navbar-luxury > .container { gap: 10px; }
+  .logo-icon-box { width: 34px; height: 34px; font-size: 17px; border-radius: 10px; }
+  .logo-text { font-size: 0.98rem; }
+  .nav-segment { padding: 2px; }
 }
 
 .btn-luxury-primary {
@@ -623,6 +741,140 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   gap: 6px;
 }
 
+/* ─── Logged-In User Role Badge (Navbar) ───
+   A small avatar-card chip: a dashed, slowly-rotating ring around a role
+   icon, paired with a stacked "Role / Full Name" label. Swaps its accent
+   color per role via .role-admin / .role-pharmacist. */
+.user-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px 3px 3px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.9);
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: box-shadow 0.25s var(--ios-ease), transform 0.35s var(--ios-spring);
+  animation: userBadgePopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.user-role-badge:hover {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+/* On narrow screens keep just the avatar - the name is the first thing
+   worth sacrificing before the bar starts to feel cramped. */
+@media (max-width: 1150px) {
+  .user-role-badge { padding: 3px; gap: 0; }
+  .user-role-badge-text { display: none; }
+}
+
+@keyframes userBadgePopIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.user-role-badge-avatar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--emerald-light);
+  color: var(--emerald-dark);
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.user-role-badge-avatar::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--botanical-teal);
+  animation: userBadgeRingSpin 14s linear infinite;
+}
+
+@keyframes userBadgeRingSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.user-role-badge-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  max-width: 190px;
+}
+
+.user-role-badge-role {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--emerald-primary);
+}
+
+.user-role-badge-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Admin variant: swap the emerald accent for the luxury gold used elsewhere
+   for admin-only surfaces, so the badge visually signals elevated access. */
+.user-role-badge.role-admin {
+  border-color: var(--border-gold);
+}
+
+.user-role-badge.role-admin .user-role-badge-avatar {
+  background: var(--luxury-gold-light);
+  color: var(--luxury-gold-dark);
+}
+
+.user-role-badge.role-admin .user-role-badge-avatar::before {
+  border-color: var(--luxury-gold);
+}
+
+.user-role-badge.role-admin .user-role-badge-role {
+  color: var(--luxury-gold-dark);
+}
+
+/* ─── Table row action group (medicine library) ───
+   Bootstrap's .btn-group squares off the inner corners, which fights the
+   pill language used everywhere else. Keep the buttons as separate rounded
+   chips with a small gap instead. */
+.btn-group[aria-label="Medicine actions"] {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.btn-group[aria-label="Medicine actions"] > .btn {
+  border-radius: var(--radius-full) !important;
+  white-space: nowrap;
+  transition: transform 0.3s var(--ios-spring),
+              background 0.2s var(--ios-ease),
+              color 0.2s var(--ios-ease);
+}
+
+.btn-group[aria-label="Medicine actions"] > .btn:active:not(:disabled) {
+  transform: scale(0.93);
+}
+
+.btn-group[aria-label="Medicine actions"] > .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ─── Page Transitions & Micro-Animations ─── */
 .page-view {
   display: none;
@@ -687,47 +939,10 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* ─── Quick Demo / Test User Switcher Pill ─── */
-.demo-switcher-pill {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: var(--radius-full);
-  padding: 8px 16px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-  z-index: 999;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  backdrop-filter: blur(10px);
-}
-
-.demo-btn {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-  border: none;
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.demo-btn:hover {
-  background: var(--emerald-primary);
-}
-
 /* Responsive Grid Adjustments */
 @media (max-width: 768px) {
   .hero-title { font-size: 2.2rem; }
   .rec-number-display { font-size: 2.2rem; }
-  .demo-switcher-pill { bottom: 10px; right: 10px; font-size: 0.68rem; }
 }
 
 /* ==========================================================================
