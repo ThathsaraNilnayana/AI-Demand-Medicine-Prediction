@@ -216,8 +216,13 @@
   // port-exclusion range (netsh int ipv4 show excludedportrange) had claimed
   // 5041-5140 on this machine, which made Node fail to bind with EACCES.
   const REAL_API_PORT = '8051';
+  // The deployed backend (Render). Update this if the Render service URL changes.
+  const PROD_API_BASE = 'https://pharmacast-api.onrender.com';
+  const isLocalHost = window.location.protocol === 'file:'
+    || window.location.hostname === 'localhost'
+    || window.location.hostname === '127.0.0.1';
   const servedByRealApi = window.location.protocol !== 'file:' && window.location.port === REAL_API_PORT;
-  const API_BASE = servedByRealApi ? '' : `http://localhost:${REAL_API_PORT}`;
+  const API_BASE = servedByRealApi ? '' : (isLocalHost ? `http://localhost:${REAL_API_PORT}` : PROD_API_BASE);
   function apiUrl(path) {
     return /^https?:\/\//i.test(path) ? path : API_BASE + path;
   }
@@ -3459,13 +3464,16 @@
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;'
       + 'background:#991b1b;color:#fff;padding:10px 20px;font:600 13px/1.5 -apple-system,sans-serif;'
       + 'text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.35);';
-    banner.innerHTML =
-      `⚠️ This page is open via <code>${window.location.origin}</code> (looks like VS Code "Go Live" / Live Server, `
-      + `not the real PharmaCast server) — login, Forecasts, Stock and Train Model will not work from here because `
-      + `the Node backend on port ${REAL_API_PORT} isn't reachable. Run <code>restart-server.bat</code> `
-      + `(or <code>npm start</code>) in the project folder, then open `
-      + `<a href="http://localhost:${REAL_API_PORT}" style="color:#fff;text-decoration:underline;">`
-      + `http://localhost:${REAL_API_PORT}</a> directly in your browser instead of using Go Live.`;
+    banner.innerHTML = isLocalHost
+      ? `⚠️ This page is open via <code>${window.location.origin}</code> (looks like VS Code "Go Live" / Live Server, `
+        + `not the real PharmaCast server) — login, Forecasts, Stock and Train Model will not work from here because `
+        + `the Node backend on port ${REAL_API_PORT} isn't reachable. Run <code>restart-server.bat</code> `
+        + `(or <code>npm start</code>) in the project folder, then open `
+        + `<a href="http://localhost:${REAL_API_PORT}" style="color:#fff;text-decoration:underline;">`
+        + `http://localhost:${REAL_API_PORT}</a> directly in your browser instead of using Go Live.`
+      : `⚠️ Can't reach the backend at <code>${API_BASE}</code> — login, Forecasts, Stock and Train Model `
+        + `will not work. The Render service may be asleep (free tier spins down after inactivity — reload `
+        + `in ~30s) or the URL in <code>PROD_API_BASE</code> may be out of date.`;
     document.body.prepend(banner);
     document.body.style.paddingTop = `${banner.offsetHeight || 44}px`;
   }

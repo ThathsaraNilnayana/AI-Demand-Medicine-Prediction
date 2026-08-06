@@ -1,0 +1,10 @@
+node_modules
+.git
+.claude
+.vscode
+*.bat
+server-log.txt
+test-run-output.txt
+diag*.txt
+uploads/*
+!uploads/.gitkeep

@@ -2,6 +2,7 @@ node_modules/
 uploads/*
 !uploads/.gitkeep
 *.db
+!pharmacast.db
 .env
 __pycache__/
 *.pyc
