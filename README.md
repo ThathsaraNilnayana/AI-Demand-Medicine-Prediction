@@ -87,6 +87,42 @@ Safety_Stock     = Predicted_Demand × 0.20
 Recommended_Order = MAX(0, Predicted_Demand + Safety_Stock − Current_Stock)
 ```
 
+### How the forecast is produced
+
+The tier table above selects the model, but three things happen around it
+that matter when reading the output:
+
+**Missing months are filled, not skipped.** A medicine with sales in Jan,
+Feb and Apr is a *four*-month series with March = 0, not a three-month one.
+649 of the 2,969 medicines in the shipped database have such gaps. Both
+counts are reported: `months_available` (the calendar span the model saw)
+and `months_observed` (months actually present in the data).
+
+**Forecasts are shrunk toward a robust level estimate.** This demand data is
+intermittent — the median coefficient of variation is 1.11 and most
+trainable medicines have zero-sales months. On series like that a pure
+trend/seasonal fit largely models noise, and in backtesting a plain
+Croston level estimate beat the raw tier models outright. Each tier's output
+is therefore blended with a Croston/SBA anchor, using a weight chosen per
+medicine by holding out recent months and scoring both. The tier model still
+determines the shape of the forecast and is still what gets reported.
+
+**Confidence is measured, not asserted.** It is derived from
+`backtest_smape` — genuine out-of-sample error from rolling-origin
+validation — and decays across the horizon. It is deliberately capped below
+1.0.
+
+> Earlier versions reported confidence as in-sample R², which was ≈1.00 by
+> construction on 6–11 month series (12 seasonal dummies fitted to as few as
+> 6 points interpolate them exactly). Measured against held-out data that
+> score *positively* correlated with error, i.e. it was actively misleading.
+> If you are comparing against older screenshots, "confidence 100.0%" was
+> that bug, and lower numbers now are more truthful, not worse.
+
+Run `python -m pytest ml/test_predict.py -v` to exercise the engine (43
+tests covering gap filling, tier boundaries, degenerate series, and the
+CLI contract used by `predictionService.js`).
+
 ## Sales data format
 
 Both Admin and Pharmacist accounts can upload historical sales data

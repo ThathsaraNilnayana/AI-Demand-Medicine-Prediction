@@ -112,6 +112,14 @@ async function generatePredictionForMedicine(medicineId) {
         status: 'ok',
         model_type: result.model_type,
         months_available: result.months_available,
+        // Distinct months actually present vs the gap-filled span the model
+        // saw. When these differ the medicine has missing months, which is
+        // worth surfacing rather than hiding.
+        months_observed: result.months_observed,
+        // Measured out-of-sample error (sMAPE %). null when the series is too
+        // short to hold anything out. This is what the confidence scores are
+        // derived from, so it belongs in the response.
+        backtest_smape: result.backtest_smape,
         predictions: inserted
     };
 }
