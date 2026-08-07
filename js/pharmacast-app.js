@@ -314,6 +314,65 @@
     upload: apiUpload
   };
 
+  /**
+   * Render's free instance spins down after inactivity and can take 50s+ to
+   * wake back up. A `fetch()` sent while the process is still down/booting
+   * doesn't wait it out - it fails immediately with a network-level
+   * "Failed to fetch", which used to show up as bogus per-medicine training
+   * errors even though nothing was actually wrong with the ML pipeline.
+   *
+   * This pings a cheap, unauthenticated endpoint (`/api/stats`) and keeps
+   * retrying until the server actually answers (or we give up after
+   * `maxWaitMs`), so callers only proceed once the backend is really up.
+   */
+  async function wakeUpBackend(log, maxWaitMs = 75000) {
+    const start = Date.now();
+    let attempt = 0;
+    let announced = false;
+
+    while (Date.now() - start < maxWaitMs) {
+      attempt++;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(apiUrl('/api/stats'), { signal: controller.signal });
+        clearTimeout(timer);
+        if (res.ok || res.status < 500) {
+          if (announced && log) log('> Server is up.', 'text-success');
+          return true;
+        }
+      } catch (err) {
+        // Network error / timeout / connection refused - server not ready yet.
+      }
+
+      if (!announced && log) {
+        log('> Waking up the server (Render free tier can take ~50s+ after inactivity)...', 'text-warning');
+        announced = true;
+      }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    if (announced && log) log('> Still not responding after 75s - continuing anyway.', 'text-warning');
+    return false;
+  }
+
+  /**
+   * Wraps fetch() with a couple of retries for transient network failures
+   * (e.g. a request that lands in the last sliver of a cold start). Only
+   * retries on connection-level errors, not on HTTP error status codes -
+   * those are real application responses and should be surfaced as-is.
+   */
+  async function fetchWithRetry(url, options, retries = 2, delayMs = 3000) {
+    for (let i = 0; ; i++) {
+      try {
+        return await fetch(url, options);
+      } catch (err) {
+        if (i >= retries) throw err;
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+  }
+
   /** Converts a real /api/medicines row into the shape the existing UI code expects. */
   function normalizeServerMedicine(row) {
     return {
@@ -2288,6 +2347,8 @@
     term.innerHTML = '';
     log('> Initializing PharmaCast AI Model Training Engine...', 'text-info');
 
+    await wakeUpBackend(log);
+
     const meds = await syncMedicinesFromServer();
     let realMeds = meds.filter(m => /^\d+$/.test(String(m.id)));
 
@@ -2400,7 +2461,7 @@
         const token = getRealAuthToken();
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(apiUrl(`/api/predictions/generate/${med.id}`), { method: 'POST', headers });
+        const res = await fetchWithRetry(apiUrl(`/api/predictions/generate/${med.id}`), { method: 'POST', headers });
         const body = await res.json().catch(() => ({}));
 
         if (res.status === 422 || body.status === 'insufficient_data') {
@@ -2414,7 +2475,7 @@
           log(`> [${med.name}] ${body.model_type} fit on ${body.months_available} months -> confidence ${(avgConf * 100).toFixed(1)}%`, 'text-light');
         }
       } catch (err) {
-        log(`> [${med.name}] Error - ${err.message}`, 'text-danger');
+        log(`> [${med.name}] Error - ${err.message} (server may still be waking up - try Run again)`, 'text-danger');
       }
 
       completed++;
