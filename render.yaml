@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: pharmacast
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: PYTHON_BIN
+        value: python3
+      - key: SESSION_TIMEOUT_MINUTES
+        value: 30
+      - key: LOGIN_MAX_ATTEMPTS
+        value: 5
+      - key: LOGIN_LOCKOUT_MINUTES
+        value: 30
+      - key: SAFETY_STOCK_FACTOR
+        value: 0.20
+      - key: LOW_STOCK_THRESHOLD_MULTIPLIER
+        value: 2
