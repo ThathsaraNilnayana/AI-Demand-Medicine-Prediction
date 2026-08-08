@@ -8,6 +8,55 @@ const db = new sqlite3.Database(config.dbPath, (err) => {
 
 db.run('PRAGMA foreign_keys = ON');
 
+// Performance pragmas. None of these change query results - they change how
+// SQLite talks to disk, which is what actually dominates response time on a
+// small VM like Render's free tier:
+//   - WAL: readers no longer block behind writers (default rollback-journal
+//     mode takes a lock that serializes every read behind any in-flight
+//     write; every /api/* request touches this file).
+//   - synchronous=NORMAL: safe under WAL (only fsyncs at checkpoints, not
+//     every commit) and is the mode SQLite's own docs recommend pairing
+//     with WAL. FULL is the slow default meant for rollback-journal mode.
+//   - cache_size/mmap_size: keep more of a 2MB database resident instead of
+//     re-reading pages from disk on every query.
+//   - temp_store=MEMORY: the ORDER BY/GROUP BY temp b-trees used by the
+//     stats and prediction queries use RAM instead of a temp file.
+db.run('PRAGMA journal_mode = WAL');
+db.run('PRAGMA synchronous = NORMAL');
+db.run('PRAGMA cache_size = -8000'); // ~8MB page cache (negative = KB, not pages)
+db.run('PRAGMA temp_store = MEMORY');
+db.run('PRAGMA mmap_size = 134217728'); // 128MB
+
+// Indexes the original schema was missing. CREATE INDEX IF NOT EXISTS is
+// idempotent, so this is safe to run on every boot against an existing
+// database (fresh installs get the same indexes via migrations/setup_database.py).
+//   - medicines(medicine_name COLLATE NOCASE): speeds up ORDER BY
+//     medicine_name (e.g. the sales-eligibility listing in sales.routes.js).
+//     NOTE: it does NOT speed up the search endpoint (GET
+//     /api/medicines?search=) - that uses `LIKE '%term%'`, and a leading
+//     wildcard can't use a b-tree index at all (confirmed via EXPLAIN QUERY
+//     PLAN: it still full-scans). At ~3,000 medicines that scan is a few
+//     milliseconds either way, so it isn't worth the complexity of an FTS5
+//     virtual table - noted here so nobody "fixes" the search by re-adding
+//     an index that provably can't help it.
+//   - predictions(medicine_id): looked up on every medicine detail view and
+//     rewritten on every forecast regeneration; was previously unindexed.
+//     Confirmed via EXPLAIN QUERY PLAN this changes the lookup from a full
+//     table scan to an index search.
+//   - predictions(prediction_month): GET /api/predictions filters
+//     `WHERE prediction_month >= DATE('now')` across the whole table.
+const PERF_INDEXES = [
+    `CREATE INDEX IF NOT EXISTS idx_medicines_name_nocase ON medicines(medicine_name COLLATE NOCASE)`,
+    `CREATE INDEX IF NOT EXISTS idx_predictions_medicine ON predictions(medicine_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_predictions_month ON predictions(prediction_month)`,
+    `CREATE INDEX IF NOT EXISTS idx_sales_batch ON sales_data(upload_batch)`,
+];
+for (const sql of PERF_INDEXES) {
+    db.run(sql, (err) => {
+        if (err) console.error('Index creation warning:', err.message);
+    });
+}
+
 // Lightweight, idempotent migration: tags each bulk-uploaded row with the
 // batch it came from, so an admin/pharmacist can undo an entire upload
 // (DELETE /api/sales/batch/:batchId) instead of only individual sales rows.

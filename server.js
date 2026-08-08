@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 
 const config = require('./config');
@@ -18,6 +19,11 @@ const statsRoutes = require('./routes/stats.routes');
 const app = express();
 
 app.use(cors());
+// gzip/brotli-negotiated compression for every response this server sends.
+// The medicines list alone is ~2,969 rows of JSON; compression typically
+// shrinks that 70-80% before it goes over the wire, which matters more than
+// anything server-side on Render's free tier (shared, bandwidth-limited).
+app.use(compression());
 app.use(express.json());
 
 // SECURITY: only expose what the frontend actually needs (the two HTML
@@ -29,8 +35,12 @@ app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
-app.use('/css', express.static(path.join(__dirname, 'css')));
-app.use('/js', express.static(path.join(__dirname, 'js')));
+// maxAge caches css/js in the browser so navigating between pages re-fetches
+// the two HTML shells but not their assets. Safe because deploys change the
+// file's Last-Modified/ETag, which express.static still revalidates on.
+const staticOpts = { maxAge: '1d', etag: true };
+app.use('/css', express.static(path.join(__dirname, 'css'), staticOpts));
+app.use('/js', express.static(path.join(__dirname, 'js'), staticOpts));
 
 // Request log for every API call - method, path, status and the error body
 // when one is returned. This is what makes "the upload doesn't work" a

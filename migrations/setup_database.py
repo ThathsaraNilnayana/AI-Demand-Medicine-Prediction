@@ -81,6 +81,7 @@ CREATE TABLE sales_data (
     FOREIGN KEY (recorded_by) REFERENCES users(user_id)
 );
 CREATE INDEX idx_sales_medicine_date ON sales_data(medicine_id, sale_date);
+CREATE INDEX idx_sales_batch ON sales_data(upload_batch);
 
 CREATE TABLE stock_levels (
     stock_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +104,9 @@ CREATE TABLE predictions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (medicine_id) REFERENCES medicines(medicine_id)
 );
+CREATE INDEX idx_medicines_name_nocase ON medicines(medicine_name COLLATE NOCASE);
+CREATE INDEX idx_predictions_medicine ON predictions(medicine_id);
+CREATE INDEX idx_predictions_month ON predictions(prediction_month);
 ''')
 
 
