@@ -159,18 +159,13 @@ router.delete('/:id', requireAuth, requireRole('admin', 'pharmacist'), async (re
         if (!medicine) return res.status(404).json({ error: 'Medicine not found' });
 
         let removedSales = 0;
-        await db.run('BEGIN TRANSACTION');
-        try {
+        await db.transaction(async () => {
             const salesResult = await db.run('DELETE FROM sales_data WHERE medicine_id = ?', [medicineId]);
             removedSales = salesResult.changes;
             await db.run('DELETE FROM predictions WHERE medicine_id = ?', [medicineId]);
             await db.run('DELETE FROM stock_levels WHERE medicine_id = ?', [medicineId]);
             await db.run('DELETE FROM medicines WHERE medicine_id = ?', [medicineId]);
-            await db.run('COMMIT');
-        } catch (txErr) {
-            await db.run('ROLLBACK');
-            throw txErr;
-        }
+        });
 
         res.json({
             message: `"${medicine.medicine_name}" removed`

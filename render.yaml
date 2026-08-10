@@ -19,3 +19,23 @@ services:
         value: 0.20
       - key: LOW_STOCK_THRESHOLD_MULTIPLIER
         value: 2
+      # Free web services have an ephemeral filesystem - local files (incl. a
+      # SQLite db) are wiped every time the service spins down from
+      # inactivity. DATABASE_URL switches db.js to the persistent Postgres
+      # backend instead (see db.postgres.js). Only takes effect if this
+      # service was created FROM this render.yaml as a Blueprint; if the
+      # service already exists (created manually in the dashboard, which is
+      # how this project's live service was set up), add the `pharmacast-db`
+      # instance manually via New -> Postgres in the dashboard instead, then
+      # add DATABASE_URL as an env var on the web service by hand - see
+      # README.md "Persistent storage on Render".
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pharmacast-db
+          property: connectionString
+
+databases:
+  - name: pharmacast-db
+    plan: free
+    databaseName: pharmacast
+    user: pharmacast

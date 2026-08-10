@@ -11,7 +11,7 @@ demand patterns, and recommend optimal stock order quantities.
 | Layer | Technology |
 |---|---|
 | Backend API | Node.js + Express |
-| Database | SQLite (`pharmacast.db`) |
+| Database | SQLite locally (`pharmacast.db`) · Postgres in production (see below) |
 | ML engine | Python — pandas, NumPy, scikit-learn, statsmodels |
 | Frontend | HTML, CSS, JavaScript, Bootstrap 5 |
 | Charts | Chart.js |
@@ -48,6 +48,56 @@ Then open **http://localhost:3000**.
 |---|---|---|
 | Admin | `admin` | `admin` |
 | Pharmacist | `rajesh_pharmacist` | `Pharma@123` |
+
+## Persistent storage on Render
+
+**Render's free web services have an ephemeral filesystem.** Per Render's own
+docs: *"Whenever a service spins down, any changes to its local filesystem
+are lost"* — and a free instance spins down after just 15 minutes of
+inactivity. Without the setup below, every sale uploaded, medicine added, or
+forecast generated through the UI disappears the next time someone opens the
+site after it's been idle. `db.js` automatically switches to a persistent
+Postgres backend (`db.postgres.js`) instead of the local SQLite file whenever
+a `DATABASE_URL` environment variable is present — nothing else about the
+app changes. **Local development is unaffected**: with no `DATABASE_URL` set,
+`npm start` keeps using `pharmacast.db` exactly as before, no Postgres
+install required.
+
+### One-time setup
+
+1. In the [Render Dashboard](https://dashboard.render.com), **New → Postgres**.
+   Choose the **Free** plan (1 GB storage, persists for 30 days from
+   creation — see [renewal](#renewing-the-free-postgres-instance) below).
+2. Once created, open the Postgres instance and copy its **Internal Database
+   URL** (same-region services can use the faster/free internal network path;
+   use the *External* URL only if connecting from outside Render, e.g. to run
+   the migration script from your own machine).
+3. Go to the `pharmacast-api` web service → **Environment** → add a variable:
+   - Key: `DATABASE_URL`
+   - Value: the connection string from step 2
+4. Save, which triggers a redeploy. Watch the deploy logs for `✅ Connected
+   to Postgres database` and `✅ Postgres schema ready` — the app creates its
+   own tables on first boot, no manual schema step needed.
+5. **Copy over what's already in `pharmacast.db`** (skip this for a brand
+   new/empty deployment): from a machine that has both `pharmacast.db` and
+   network access to the Postgres instance (use the *External* Database URL
+   for this step if running it from your own computer rather than a Render
+   shell):
+   ```bash
+   DATABASE_URL="<external database url>" npm run migrate-to-postgres
+   ```
+   This copies every medicine, sale, stock level, and prediction across,
+   preserving IDs. It's safe to re-run - each table is replaced with a fresh
+   copy of `pharmacast.db`, not appended to. Session tokens are intentionally
+   not migrated (everyone just logs in again).
+
+### Renewing the free Postgres instance
+
+Render's free Postgres databases **expire and are deleted 30 days after
+creation** (with a 14-day warned grace period to upgrade first). Before that
+deadline, either upgrade the instance to a paid plan from its Render
+dashboard page, or create a fresh free instance and re-point `DATABASE_URL`
+at it (re-run `npm run migrate-to-postgres` against the new one first).
 
 ## Prediction cache (nightly job)
 

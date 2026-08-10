@@ -1,130 +1,16 @@
-const sqlite3 = require('sqlite3').verbose();
-const config = require('./config');
-
-const db = new sqlite3.Database(config.dbPath, (err) => {
-    if (err) console.error('Database error:', err);
-    else console.log('✅ Connected to SQLite database');
-});
-
-db.run('PRAGMA foreign_keys = ON');
-
-// Performance pragmas. None of these change query results - they change how
-// SQLite talks to disk, which is what actually dominates response time on a
-// small VM like Render's free tier:
-//   - WAL: readers no longer block behind writers (default rollback-journal
-//     mode takes a lock that serializes every read behind any in-flight
-//     write; every /api/* request touches this file).
-//   - synchronous=NORMAL: safe under WAL (only fsyncs at checkpoints, not
-//     every commit) and is the mode SQLite's own docs recommend pairing
-//     with WAL. FULL is the slow default meant for rollback-journal mode.
-//   - cache_size/mmap_size: keep more of a 2MB database resident instead of
-//     re-reading pages from disk on every query.
-//   - temp_store=MEMORY: the ORDER BY/GROUP BY temp b-trees used by the
-//     stats and prediction queries use RAM instead of a temp file.
-db.run('PRAGMA journal_mode = WAL');
-db.run('PRAGMA synchronous = NORMAL');
-db.run('PRAGMA cache_size = -8000'); // ~8MB page cache (negative = KB, not pages)
-db.run('PRAGMA temp_store = MEMORY');
-db.run('PRAGMA mmap_size = 134217728'); // 128MB
-
-// Indexes the original schema was missing. CREATE INDEX IF NOT EXISTS is
-// idempotent, so this is safe to run on every boot against an existing
-// database (fresh installs get the same indexes via migrations/setup_database.py).
-//   - medicines(medicine_name COLLATE NOCASE): speeds up ORDER BY
-//     medicine_name (e.g. the sales-eligibility listing in sales.routes.js).
-//     NOTE: it does NOT speed up the search endpoint (GET
-//     /api/medicines?search=) - that uses `LIKE '%term%'`, and a leading
-//     wildcard can't use a b-tree index at all (confirmed via EXPLAIN QUERY
-//     PLAN: it still full-scans). At ~3,000 medicines that scan is a few
-//     milliseconds either way, so it isn't worth the complexity of an FTS5
-//     virtual table - noted here so nobody "fixes" the search by re-adding
-//     an index that provably can't help it.
-//   - predictions(medicine_id): looked up on every medicine detail view and
-//     rewritten on every forecast regeneration; was previously unindexed.
-//     Confirmed via EXPLAIN QUERY PLAN this changes the lookup from a full
-//     table scan to an index search.
-//   - predictions(prediction_month): GET /api/predictions filters
-//     `WHERE prediction_month >= DATE('now')` across the whole table.
-const PERF_INDEXES = [
-    `CREATE INDEX IF NOT EXISTS idx_medicines_name_nocase ON medicines(medicine_name COLLATE NOCASE)`,
-    `CREATE INDEX IF NOT EXISTS idx_predictions_medicine ON predictions(medicine_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_predictions_month ON predictions(prediction_month)`,
-    `CREATE INDEX IF NOT EXISTS idx_sales_batch ON sales_data(upload_batch)`,
-];
-for (const sql of PERF_INDEXES) {
-    db.run(sql, (err) => {
-        if (err) console.error('Index creation warning:', err.message);
-    });
-}
-
-// Lightweight, idempotent migration: tags each bulk-uploaded row with the
-// batch it came from, so an admin/pharmacist can undo an entire upload
-// (DELETE /api/sales/batch/:batchId) instead of only individual sales rows.
-// Existing databases won't have this column yet - add it if missing, and
-// ignore the "duplicate column" error on databases that already have it.
-// Each entry is applied once; "duplicate column" simply means an existing
-// database already has it, so that error is expected and ignored.
-const MIGRATIONS = [
-    // Tags each bulk-uploaded row with the batch it came from, so an
-    // admin/pharmacist can undo an entire upload in one action.
-    ['sales_data', 'upload_batch', 'TEXT'],
-    // FR21: dosage is part of a medicine's identity - "Paracetamol 500mg" and
-    // "Paracetamol 250mg" are DIFFERENT products and must never be merged
-    // into one another during a sales upload. manufacturer completes the
-    // medicine profile FR21 asks to display.
-    ['medicines', 'dosage', 'TEXT'],
-    ['medicines', 'manufacturer', 'TEXT'],
-    // Marks medicines that were auto-created by a sales-data upload rather
-    // than added to the catalogue by an admin. Pharmacists may remove these
-    // (cleaning up their own import) but not catalogue entries.
-    ['medicines', 'created_from_upload', 'INTEGER DEFAULT 0'],
-    // FR10: the rejection reason is mandatory and must be retained so it can
-    // be shown to the pharmacist when they next try to log in.
-    ['users', 'rejection_reason', 'TEXT']
-];
-
-for (const [table, column, type] of MIGRATIONS) {
-    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, (err) => {
-        if (err && !/duplicate column/i.test(err.message)) {
-            console.error(`Migration warning (${table}.${column}):`, err.message);
-        }
-    });
-}
-
-function run(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) return reject(err);
-            resolve({ lastID: this.lastID, changes: this.changes });
-        });
-    });
-}
-
-function get(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) return reject(err);
-            resolve(row);
-        });
-    });
-}
-
-function all(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.all(sql, params, (err, rows) => {
-            if (err) return reject(err);
-            resolve(rows || []);
-        });
-    });
-}
-
-function exec(sql) {
-    return new Promise((resolve, reject) => {
-        db.exec(sql, (err) => {
-            if (err) return reject(err);
-            resolve();
-        });
-    });
-}
-
-module.exports = { db, run, get, all, exec };
+/**
+ * Database entry point. Picks the backend based on whether DATABASE_URL is
+ * set:
+ *   - Set (Render, once a Postgres instance is linked to this web service):
+ *     db.postgres.js. Persists across restarts/spin-downs/deploys.
+ *   - Unset (local development): db.sqlite.js, same as before - zero setup,
+ *     just works against the pharmacast.db file in the repo.
+ *
+ * Every other file in the app does `const db = require('./db')` (or '../db')
+ * and calls db.run/db.get/db.all/db.exec, or destructures `{ db }` for
+ * db.close() - both backends export that exact same shape, so nothing else
+ * needed to change to add the Postgres backend.
+ */
+module.exports = process.env.DATABASE_URL
+    ? require('./db.postgres')
+    : require('./db.sqlite');

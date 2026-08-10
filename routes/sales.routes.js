@@ -134,7 +134,7 @@ router.get('/trainable', requireAuth, requireRole('admin', 'pharmacist'), async 
                    COUNT(DISTINCT strftime('%Y-%m', s.sale_date)) AS months
             FROM sales_data s
             JOIN medicines m ON m.medicine_id = s.medicine_id
-            GROUP BY s.medicine_id
+            GROUP BY s.medicine_id, m.medicine_name, m.dosage
             ORDER BY months DESC, m.medicine_name
         `);
 
@@ -343,7 +343,7 @@ router.post('/upload', requireAuth, requireRole('admin', 'pharmacist'), handleUp
                 FROM sales_data
                 WHERE upload_batch IS NOT NULL
                 GROUP BY upload_batch
-                HAVING records = ? AND first_date = ? AND last_date = ?
+                HAVING COUNT(*) = ? AND MIN(sale_date) = ? AND MAX(sale_date) = ?
                 LIMIT 1
             `, [validRows.length, dates[0], dates[dates.length - 1]]);
 
@@ -376,8 +376,7 @@ router.post('/upload', requireAuth, requireRole('admin', 'pharmacist'), handleUp
         let createdCount = 0;
         const createdMedicines = [];
 
-        await db.run('BEGIN TRANSACTION');
-        try {
+        await db.transaction(async () => {
             for (const row of validRows) {
                 let medicineId = row.medicine_id;
 
@@ -421,12 +420,7 @@ router.post('/upload', requireAuth, requireRole('admin', 'pharmacist'), handleUp
                     VALUES (?, ?, ?, ?, ?)
                 `, [medicineId, row.quantity_sold, row.sale_date, req.user.id, batchId]);
             }
-
-            await db.run('COMMIT');
-        } catch (txErr) {
-            await db.run('ROLLBACK');
-            throw txErr;
-        }
+        });
 
         cleanup();
         res.json({
@@ -458,7 +452,7 @@ router.get('/batch/:batchId/medicines', requireAuth, requireRole('admin', 'pharm
             FROM sales_data s
             JOIN medicines m ON m.medicine_id = s.medicine_id
             WHERE s.upload_batch = ?
-            GROUP BY s.medicine_id
+            GROUP BY s.medicine_id, m.medicine_name, m.dosage
             ORDER BY m.medicine_name
         `, [req.params.batchId]);
 
@@ -487,8 +481,7 @@ router.delete('/batch/:batchId', requireAuth, requireRole('admin', 'pharmacist')
         }
 
         let removed = 0;
-        await db.run('BEGIN TRANSACTION');
-        try {
+        await db.transaction(async () => {
             const result = await db.run('DELETE FROM sales_data WHERE upload_batch = ?', [batchId]);
             removed = result.changes;
 
@@ -497,12 +490,7 @@ router.delete('/batch/:batchId', requireAuth, requireRole('admin', 'pharmacist')
                 // drop them rather than leaving stale predictions on screen.
                 await db.run('DELETE FROM predictions WHERE medicine_id = ?', [row.medicine_id]);
             }
-
-            await db.run('COMMIT');
-        } catch (txErr) {
-            await db.run('ROLLBACK');
-            throw txErr;
-        }
+        });
 
         res.json({
             message: `Removed ${removed} sales record(s).`,

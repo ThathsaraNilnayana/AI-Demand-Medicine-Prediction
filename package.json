@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "setup-db": "python migrations/setup_database.py",
     "precompute": "node scripts/precompute_predictions.js",
+    "migrate-to-postgres": "node scripts/migrate_sqlite_to_postgres.js",
     "open": "start http://localhost:8051"
   },
   "keywords": [
@@ -28,6 +29,7 @@
     "express": "^4.18.2",
     "express-validator": "^7.2.0",
     "multer": "^2.0.0",
+    "pg": "^8.23.0",
     "sqlite3": "^5.1.6",
     "xlsx": "^0.18.5"
   },
