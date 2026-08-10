@@ -65,19 +65,35 @@ async function migrateTable(sqliteDb, table, columns, pkColumn) {
         return 0;
     }
 
-    const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-    const insertSql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
+    // Rows are inserted in batched multi-row INSERTs rather than one query
+    // per row. The original one-at-a-time version was correct but pathologically
+    // slow in the real deployment: this script runs from a developer's machine
+    // against Render's Postgres in Oregon, so every INSERT costs a full network
+    // round trip (~250ms). At ~19,000 rows that is over an hour of pure latency.
+    // Batching 500 rows per statement turns those ~19,000 round trips into ~40.
+    //
+    // BATCH_SIZE is bounded by Postgres's hard limit of 65535 bind parameters
+    // per statement; the widest table here (users) has 14 columns, so
+    // 500 * 14 = 7,000 parameters leaves a large margin.
+    const BATCH_SIZE = 500;
 
-    // One INSERT per row inside a single transaction. This app's data is a
-    // few thousand rows at most (2,969 medicines / 16,172 sales rows in the
-    // dataset this was built against) - simple and correct beats a bulk
-    // COPY pipeline's complexity for a script that runs once.
     const client = await pg.pool.connect();
     try {
         await client.query('BEGIN');
-        for (const row of rows) {
-            const values = columns.map((c) => row[c]);
-            await client.query(insertSql, values);
+        for (let start = 0; start < rows.length; start += BATCH_SIZE) {
+            const batch = rows.slice(start, start + BATCH_SIZE);
+            const values = [];
+            const tuples = batch.map((row, rowIdx) => {
+                const placeholders = columns.map((c, colIdx) => {
+                    values.push(row[c]);
+                    return `$${rowIdx * columns.length + colIdx + 1}`;
+                });
+                return `(${placeholders.join(', ')})`;
+            });
+            await client.query(
+                `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}`,
+                values
+            );
         }
         if (pkColumn) {
             await client.query(

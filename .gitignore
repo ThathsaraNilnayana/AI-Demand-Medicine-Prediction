@@ -10,3 +10,6 @@ server-log.txt
 test-run-output.txt
 diag*.txt
 diag*.bat
+# Contains the live Postgres connection string (password) - never commit.
+run-migration.bat
+migration-output.txt
