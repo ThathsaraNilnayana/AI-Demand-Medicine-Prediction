@@ -37,7 +37,59 @@ if (!process.env.DATABASE_URL) {
     process.exit(1);
 }
 
-const pg = require('../db.postgres');
+// Deliberately NOT required at module load. Requiring db.postgres immediately
+// fires its schema bootstrap (CREATE TABLE IF NOT EXISTS ...), which needs a
+// lock on every table - so if a previous run of this script was interrupted
+// (closed terminal, lost connection, Ctrl+C), its half-open transaction still
+// holds those locks and the require would hang forever with no output. So the
+// stale backends get cleared FIRST, then this is required inside main().
+let pg;
+
+/**
+ * Terminates leftover backends from a previously interrupted run of this
+ * script, which would otherwise block the schema bootstrap and the TRUNCATEs
+ * below indefinitely.
+ *
+ * Two kinds of leftover session get cleared, both of which are dead weight:
+ *   1. 'idle in transaction' for over a minute - holding locks it will never
+ *      release because nothing is driving it any more.
+ *   2. Any session currently BLOCKED waiting on a lock. During a migration the
+ *      only thing that waits on these tables' locks is another copy of this
+ *      script, so a waiter here means a duplicate/abandoned run - and letting
+ *      it through would race this one.
+ *
+ * The live PharmaCast web service is unaffected: its pooled connections sit in
+ * plain 'idle' (no open transaction, not waiting on a lock), which matches
+ * neither case.
+ */
+async function clearStaleLocks() {
+    const { Client } = require('pg');
+    const client = new Client({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.DATABASE_URL.includes('render.com') ? { rejectUnauthorized: false } : undefined,
+        // Fail fast rather than hanging if the DB is unreachable.
+        connectionTimeoutMillis: 15000,
+        statement_timeout: 15000
+    });
+    await client.connect();
+    try {
+        const { rows } = await client.query(`
+            SELECT pg_terminate_backend(pid) AS terminated, pid, state, wait_event_type
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND pid <> pg_backend_pid()
+              AND (
+                    (state = 'idle in transaction' AND state_change < now() - interval '1 minute')
+                 OR wait_event_type = 'Lock'
+              )
+        `);
+        if (rows.length) {
+            console.log(`Cleared ${rows.length} stale connection(s) left by an interrupted run.`);
+        }
+    } finally {
+        await client.end();
+    }
+}
 
 /** Promisified sqlite3 all() against the local file - read-only, one-shot. */
 function sqliteAll(db, sql) {
@@ -119,6 +171,10 @@ async function main() {
         if (err) { console.error('Could not open pharmacast.db:', err.message); process.exit(1); }
     });
 
+    console.log('Checking for stale locks from any interrupted previous run...');
+    await clearStaleLocks();
+
+    pg = require('../db.postgres');
     await pg.ready;
     console.log('Postgres schema confirmed ready. Migrating (in dependency order)...\n');
 
