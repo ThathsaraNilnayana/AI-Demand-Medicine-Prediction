@@ -597,14 +597,50 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   display: none;
 }
 
+/* The prominent dashboard search bar sits inside a .card-luxury card, and
+   .card-luxury sets overflow:hidden (needed elsewhere for rounded corners
+   and the button click-ripple effect - see the `.btn, .nav-link-item,
+   .card-luxury { overflow: hidden }` rule further down this file). Without
+   this override, the dropdown below the input - which is position:absolute
+   and taller than the card - gets clipped by the card's own edge, so
+   results appear cut off mid-row with the scrollbar overlapping the text
+   instead of showing the full list. overflow:visible here only affects
+   clipping of content that pokes outside the box; the card's rounded
+   corners (border-radius) still apply to its own background/border either
+   way. Compound selector (.card-luxury.card-luxury-search) so this wins by
+   specificity over the plain `.card-luxury` rule regardless of which one
+   comes later in the file - a single-class override would otherwise lose
+   to that rule since both have equal specificity. */
+.card-luxury.card-luxury-search {
+  overflow: visible;
+}
+
 .search-dropdown-item {
   padding: 14px 20px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   cursor: pointer;
   transition: background 0.2s;
+}
+
+.search-dropdown-item > div:first-child {
+  min-width: 0; /* lets the name/category text truncate instead of pushing the badge off-edge */
+  flex: 1 1 auto;
+}
+
+.search-dropdown-item > div:first-child strong,
+.search-dropdown-item > div:first-child .small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-dropdown-item > div:last-child {
+  flex: 0 0 auto;
 }
 
 .search-dropdown-item:last-child {
