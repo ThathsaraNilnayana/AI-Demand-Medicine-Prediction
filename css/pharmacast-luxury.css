@@ -610,9 +610,26 @@ h1, h2, h3, h4, h5, h6, .font-heading {
    way. Compound selector (.card-luxury.card-luxury-search) so this wins by
    specificity over the plain `.card-luxury` rule regardless of which one
    comes later in the file - a single-class override would otherwise lose
-   to that rule since both have equal specificity. */
+   to that rule since both have equal specificity.
+
+   SECOND BUG, found after the overflow fix went live: with overflow no
+   longer clipping it, the dropdown was visible but painted BEHIND the
+   stat cards row underneath it, so the two visually collided instead of
+   the dropdown floating cleanly on top. Cause: .card-luxury sets
+   `will-change: transform, box-shadow` (further down this file, for the
+   hover-lift animation). will-change on ANY value that could produce a
+   transform silently creates a new CSS stacking context on that element -
+   this is easy to miss because nothing about "will-change" sounds like a
+   stacking property. Once that happens, z-index on a descendant (the
+   dropdown's z-index:500) only wins contests INSIDE that stacking
+   context; it can't reach outside to beat the stat cards, which sit in
+   a later, sibling stacking context and paint after. Giving the card
+   itself an explicit z-index lifts its entire stacking context above
+   its unelevated (z-index:auto) siblings, which is what actually needs
+   to move. */
 .card-luxury.card-luxury-search {
   overflow: visible;
+  z-index: 20;
 }
 
 .search-dropdown-item {
