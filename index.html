@@ -15,7 +15,13 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
 
   <!-- Custom Luxury Natural Medicine CSS -->
-  <link rel="stylesheet" href="css/pharmacast-luxury.css" />
+  <!-- ?v= is a cache-buster. Browsers that already cached these files under
+       the old `max-age=1d` header will not revalidate until that day is up,
+       so a changed query string is the only way to reach them now. The server
+       sends `Cache-Control: no-cache` going forward (see server.js), so this
+       value does not need bumping on every deploy - only if a stale-cache
+       problem is ever seen again. -->
+  <link rel="stylesheet" href="css/pharmacast-luxury.css?v=20260811" />
 </head>
 <body>
 
@@ -1204,7 +1210,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <!-- Core App Logic & ML Forecasting Engine -->
-  <script src="js/pharmacast-app.js"></script>
+  <script src="js/pharmacast-app.js?v=20260811"></script>
 
 </body>
 </html>

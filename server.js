@@ -32,13 +32,35 @@ app.use(express.json());
 // whole database, including password hashes), db.js, config.js and every
 // route/service file were all directly downloadable over HTTP. Do not widen
 // this without checking what's being exposed.
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
-// maxAge caches css/js in the browser so navigating between pages re-fetches
-// the two HTML shells but not their assets. Safe because deploys change the
-// file's Last-Modified/ETag, which express.static still revalidates on.
-const staticOpts = { maxAge: '1d', etag: true };
+// The HTML shells must never be served from cache without checking first -
+// they are what point at the current asset versions.
+const sendHtml = (file) => (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(__dirname, file));
+};
+app.get('/', sendHtml('index.html'));
+app.get('/index.html', sendHtml('index.html'));
+app.get('/admin.html', sendHtml('admin.html'));
+
+// This used to be `{ maxAge: '1d', etag: true }`, with a comment claiming
+// express.static "still revalidates on" the ETag. It does not. A fresh
+// max-age means the browser serves its cached copy WITHOUT asking the server
+// anything at all - the ETag is only consulted once max-age has expired. So
+// every deploy of pharmacast-app.js / pharmacast-luxury.css was invisible to
+// anyone who had loaded the site in the previous 24 hours, which is exactly
+// what made a string of correctly-deployed fixes look like they had never
+// been applied. (Measured on production: the plain URL returned a 166,088-byte
+// build with none of the new code, while the same URL with a cache-buster
+// returned the current 171,231-byte build.)
+//
+// `no-cache` does NOT mean "don't cache" - it means "cache, but revalidate
+// before every use". Combined with etag, an unchanged file costs a 304 with
+// an empty body, so the bandwidth saving is kept while correctness is
+// restored: a deploy is picked up on the next page load, every time.
+const staticOpts = {
+    etag: true,
+    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
+};
 app.use('/css', express.static(path.join(__dirname, 'css'), staticOpts));
 app.use('/js', express.static(path.join(__dirname, 'js'), staticOpts));
 
