@@ -1727,7 +1727,7 @@
               <button class="btn btn-sm ${u.status === 'inactive' ? 'btn-outline-success' : 'btn-outline-warning'} py-1 px-2" onclick="window.PharmaCastApp.toggleUserStatus(${u.user_id}, '${u.status}')" title="Toggle account access">
                 <i class="bi ${u.status === 'inactive' ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i> ${u.status === 'inactive' ? 'Reactivate' : 'Deactivate'}
               </button>
-              <button class="btn btn-sm btn-outline-primary py-1 px-2" onclick="window.PharmaCastApp.resetUserPassword(${u.user_id})" title="Reset password to Password@123">
+              <button class="btn btn-sm btn-outline-primary py-1 px-2" onclick="window.PharmaCastApp.resetUserPassword(${u.user_id})" title="Reset to a temporary password - the user must choose their own at next login">
                 <i class="bi bi-key-fill"></i> Reset Pass
               </button>
               <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="window.PharmaCastApp.deleteUserAccount(${u.user_id})" title="Permanently delete user">
@@ -1756,6 +1756,9 @@
   async function resetUserPassword(userId) {
     try {
       const result = await api.put(`/api/users/${userId}/reset-password`);
+      // The message now also states that the user is forced to pick their own
+      // password at next login, so the admin knows the temporary one can't be
+      // left in place.
       showToastNotification(result.message || 'Password reset successfully', 'info');
     } catch (err) {
       showToastNotification(`Could not reset password: ${err.message}`, 'error');
@@ -3267,6 +3270,24 @@
       return;
     }
 
+    // An admin reset this account to the shared temporary password. The server
+    // verified the credential but deliberately issued NO token, so there is
+    // nothing to log in WITH yet - the only way forward is to set a new
+    // password. Note we never reach completeLogin() here.
+    if (result.must_change_password) {
+      beginForcePasswordChange(usernameVal, passwordVal, result);
+      return;
+    }
+
+    await completeLogin(result, `Welcome back, ${result.full_name || result.name || result.username}!`);
+  }
+
+  /**
+   * Everything that happens once the server has handed us a real session
+   * token. Shared by the normal login path and the forced-password-change
+   * path (which returns the same payload shape), so the two can't drift.
+   */
+  async function completeLogin(result, toastMessage) {
     setRealAuthToken(result.token);
 
     currentUser = {
@@ -3290,7 +3311,7 @@
     updateNavbarState();
     startInactivityTimer();
 
-    showToastNotification(`Welcome back, ${currentUser.fullName}!`, "success");
+    showToastNotification(toastMessage, "success");
 
     if (isUserAdminRole(currentUser)) {
       showPage('page-admin-dashboard');
@@ -3306,6 +3327,106 @@
     } else {
       renderPharmacistDashboard();
     }
+  }
+
+  /* ─── Forced password change (after an admin "Reset Pass") ───
+     The credential is held in a module-scoped variable for exactly as long as
+     this one form is on screen, and is wiped as soon as the change succeeds or
+     the user backs out. It is never written to sessionStorage/localStorage -
+     the whole point is that this password is compromised-by-design, so it must
+     not outlive the form that replaces it. */
+  let pendingPasswordChange = null; // { username, currentPassword }
+
+  function beginForcePasswordChange(username, currentPassword, result) {
+    pendingPasswordChange = { username, currentPassword };
+
+    const nameEl = document.getElementById('force-pw-username');
+    if (nameEl) nameEl.textContent = (result && (result.name || result.username)) || username;
+
+    ['force-pw-new', 'force-pw-confirm'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const errEl = document.getElementById('force-pw-error-banner');
+    if (errEl) errEl.style.display = 'none';
+
+    // Clear the login form so the temporary password isn't left sitting in a
+    // visible field behind this page.
+    const loginPw = document.getElementById('login-password');
+    if (loginPw) loginPw.value = '';
+
+    showPage('page-force-password-change');
+    showToastNotification(
+      (result && result.message) || 'Please choose a new password to continue.',
+      'warning'
+    );
+  }
+
+  function cancelForcePasswordChange() {
+    pendingPasswordChange = null;
+    showPage('page-login');
+  }
+
+  function showForcePasswordError(msg) {
+    const el = document.getElementById('force-pw-error-banner');
+    if (el) {
+      el.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> ${msg}`;
+      el.style.display = 'block';
+    }
+  }
+
+  async function handleForcePasswordChangeSubmit(e) {
+    e.preventDefault();
+
+    // Guard against landing on this page without having authenticated first
+    // (e.g. a stale tab restored after a refresh) - without the held
+    // credential there is nothing to prove who this is.
+    if (!pendingPasswordChange) {
+      showToastNotification('Please sign in again to change your password.', 'warning');
+      showPage('page-login');
+      return;
+    }
+
+    const newPw = document.getElementById('force-pw-new').value;
+    const confirmPw = document.getElementById('force-pw-confirm').value;
+    const errEl = document.getElementById('force-pw-error-banner');
+    if (errEl) errEl.style.display = 'none';
+
+    // Mirror the server's rules so the common mistakes are caught without a
+    // round trip. The server re-checks all of these regardless - this is a
+    // convenience, not the enforcement point.
+    if (newPw !== confirmPw) {
+      showForcePasswordError('The two passwords do not match.');
+      return;
+    }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/.test(newPw)) {
+      showForcePasswordError('Password needs 8+ characters including an uppercase letter, a lowercase letter, a digit and a special symbol (!@#$%^&*).');
+      return;
+    }
+    if (newPw === pendingPasswordChange.currentPassword) {
+      showForcePasswordError('Your new password must be different from the temporary one.');
+      return;
+    }
+
+    let result;
+    try {
+      result = await api.post('/api/change-password', {
+        username: pendingPasswordChange.username,
+        current_password: pendingPasswordChange.currentPassword,
+        new_password: newPw
+      });
+    } catch (err) {
+      showForcePasswordError(err.message || 'Could not change your password.');
+      return;
+    }
+
+    // Wipe the temporary credential and the typed values the moment they're
+    // no longer needed.
+    pendingPasswordChange = null;
+    document.getElementById('force-pw-new').value = '';
+    document.getElementById('force-pw-confirm').value = '';
+
+    await completeLogin(result, 'Password updated. Welcome back!');
   }
 
   function showLoginError(msg) {
@@ -3630,6 +3751,8 @@
     deleteMedicine,
     closeMedicineModal,
     handleLoginSubmit,
+    handleForcePasswordChangeSubmit,
+    cancelForcePasswordChange,
     handleRegisterSubmit,
     closeRegistrationSuccessModal,
     handleLogout,

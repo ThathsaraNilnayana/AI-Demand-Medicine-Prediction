@@ -309,6 +309,72 @@
     </section>
 
     <!-- ======================================================================
+         PAGE 3b: FORCED PASSWORD CHANGE
+         Shown instead of a dashboard when an admin has reset this account to
+         the shared temporary password. The server issues no session token in
+         that case, so this form - not the login form - is what actually
+         completes the login.
+         ====================================================================== -->
+    <section id="page-force-password-change" class="page-view">
+      <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+          <div class="card-luxury p-5">
+            <div class="text-center mb-4">
+              <div class="logo-icon-box mx-auto mb-3">
+                <i class="bi bi-shield-lock-fill"></i>
+              </div>
+              <h2 class="font-heading text-dark mb-1">Choose a New Password</h2>
+              <p class="text-muted small mb-0">
+                An administrator reset your password to a temporary one. For your security you must
+                set your own password before you can continue.
+              </p>
+            </div>
+
+            <div class="alert alert-warning" style="border-radius:12px;">
+              <i class="bi bi-info-circle-fill me-2"></i>
+              Signing in as <strong id="force-pw-username">—</strong>. You will be taken to your
+              dashboard as soon as your new password is saved.
+            </div>
+
+            <div id="force-pw-error-banner" class="alert alert-danger" style="display:none; border-radius:12px;"></div>
+
+            <form onsubmit="window.PharmaCastApp.handleForcePasswordChangeSubmit(event)">
+              <div class="mb-3">
+                <label class="form-label fw-bold small text-muted text-uppercase">New Password</label>
+                <div class="input-group">
+                  <span class="input-group-text bg-white border-end-0"><i class="bi bi-lock text-muted"></i></span>
+                  <input type="password" id="force-pw-new" class="form-control form-control-lg border-start-0"
+                         placeholder="Enter your new password" autocomplete="new-password" required />
+                </div>
+                <div class="form-text small">
+                  Min 8 characters, including an uppercase letter, a lowercase letter, a digit and a special symbol (!@#$%^&amp;*).
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <label class="form-label fw-bold small text-muted text-uppercase">Confirm New Password</label>
+                <div class="input-group">
+                  <span class="input-group-text bg-white border-end-0"><i class="bi bi-lock-fill text-muted"></i></span>
+                  <input type="password" id="force-pw-confirm" class="form-control form-control-lg border-start-0"
+                         placeholder="Re-enter your new password" autocomplete="new-password" required />
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-lg btn-luxury-primary w-100 py-3 mb-3">
+                <i class="bi bi-check2-circle"></i> Save Password &amp; Continue
+              </button>
+
+              <div class="text-center">
+                <a href="#" onclick="window.PharmaCastApp.cancelForcePasswordChange(); return false;"
+                   class="small text-muted text-decoration-none">Cancel and return to login</a>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
          PAGE 4: PHARMACIST DASHBOARD
          ====================================================================== -->
     <section id="page-pharmacist-dashboard" class="page-view">

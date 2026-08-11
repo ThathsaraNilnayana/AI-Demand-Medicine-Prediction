@@ -281,6 +281,13 @@ CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines(medicine_name);
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS backtest_smape REAL;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS loss_mae REAL;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_pct REAL;
+
+-- Set to 1 when an admin resets an account's password to the shared default
+-- (config.defaultResetPassword). While it is set, /api/login verifies the
+-- password but deliberately issues NO session token - the account is forced
+-- through /api/change-password first. Stored as INTEGER rather than BOOLEAN
+-- so the same 0/1 values round-trip identically through the SQLite driver.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER DEFAULT 0;
 `;
 
 const ready = pool.query(SCHEMA_SQL)

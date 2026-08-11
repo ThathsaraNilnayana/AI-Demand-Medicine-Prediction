@@ -43,6 +43,7 @@ CREATE TABLE users (
     status TEXT CHECK(status IN ('active', 'pending', 'inactive', 'rejected')) DEFAULT 'pending',
     failed_login_attempts INTEGER DEFAULT 0,
     locked_until TIMESTAMP,
+    must_change_password INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

@@ -99,7 +99,12 @@ const MIGRATIONS = [
     // have no loss/accuracy/smape to show until re-trained.
     ['predictions', 'backtest_smape', 'REAL'],
     ['predictions', 'loss_mae', 'REAL'],
-    ['predictions', 'accuracy_pct', 'REAL']
+    ['predictions', 'accuracy_pct', 'REAL'],
+    // Set to 1 when an admin resets an account's password to the shared
+    // default. While set, login verifies the password but issues no session -
+    // the account must go through /api/change-password first, so a known
+    // default password can never reach an actual logged-in page.
+    ['users', 'must_change_password', 'INTEGER DEFAULT 0']
 ];
 
 for (const [table, column, type] of MIGRATIONS) {

@@ -5,9 +5,14 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
+const config = require('../config');
+
 const router = express.Router();
 const SALT_ROUNDS = 10;
-const DEFAULT_RESET_PASSWORD = 'Password@123';
+// Single source of truth, shared with routes/auth.routes.js so the value this
+// route SETS and the value that route REFUSES to accept as a new password can
+// never drift apart.
+const DEFAULT_RESET_PASSWORD = config.defaultResetPassword;
 
 // An admin must never be able to lock themselves (or every other admin) out
 // of the platform via these account-management actions.
@@ -151,15 +156,33 @@ router.put('/:id/reactivate', requireAuth, requireRole('admin'), async (req, res
 // Resets a user's password back to the platform default so they can log in
 // and change it themselves. Also clears any lockout so the reset actually
 // takes effect immediately.
+//
+// must_change_password = 1 is the important part: this password is known to
+// the admin who issued the reset (and is the same well-known string for every
+// reset), so it must never be usable as a working credential. With the flag
+// set, /api/login authenticates but issues NO session token - the account is
+// forced through /api/change-password before it can reach any page.
 router.put('/:id/reset-password', requireAuth, requireRole('admin'), async (req, res, next) => {
     try {
         const passwordHash = await bcrypt.hash(DEFAULT_RESET_PASSWORD, SALT_ROUNDS);
         const result = await db.run(
-            `UPDATE users SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL WHERE user_id = ?`,
+            `UPDATE users
+             SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL, must_change_password = 1
+             WHERE user_id = ?`,
             [passwordHash, req.params.id]
         );
         if (result.changes === 0) return res.status(404).json({ error: 'User not found' });
-        res.json({ message: `Password reset to "${DEFAULT_RESET_PASSWORD}"`, default_password: DEFAULT_RESET_PASSWORD });
+
+        // Any session this user already had must die with the reset - otherwise
+        // an already-open tab keeps working on the old credential and simply
+        // never sees the forced-change screen.
+        await db.run('DELETE FROM sessions WHERE user_id = ?', [req.params.id]);
+
+        res.json({
+            message: `Password reset to "${DEFAULT_RESET_PASSWORD}". The user must choose a new password at next login.`,
+            default_password: DEFAULT_RESET_PASSWORD,
+            must_change_password: true
+        });
     } catch (err) { next(err); }
 });
 

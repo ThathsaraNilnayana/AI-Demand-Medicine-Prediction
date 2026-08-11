@@ -7,6 +7,11 @@ module.exports = {
     loginLockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MINUTES) || 30,
     safetyStockFactor: Number(process.env.SAFETY_STOCK_FACTOR) || 0.20,
     lowStockThresholdMultiplier: Number(process.env.LOW_STOCK_THRESHOLD_MULTIPLIER) || 2,
+    // Password an admin's "Reset Pass" action sets an account to. Shared by
+    // routes/users.routes.js (which sets it) and routes/auth.routes.js (which
+    // refuses to let the new password be this value again), so the two can
+    // never drift apart.
+    defaultResetPassword: process.env.DEFAULT_RESET_PASSWORD || 'Password@123',
     pythonBin: process.env.PYTHON_BIN || 'python',
     dbPath: require('path').join(__dirname, 'pharmacast.db')
 };
