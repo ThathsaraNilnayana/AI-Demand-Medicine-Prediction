@@ -864,7 +864,7 @@
     } else if (pageId === 'page-pharmacist-medicines' && !currentUser) {
       showToastNotification("Please log in to view the medicine library.", "error");
       pageId = 'page-home';
-    } else if ((pageId === 'page-stock-overview' || pageId === 'page-forecasts-overview') && !currentUser) {
+    } else if ((pageId === 'page-stock-overview' || pageId === 'page-forecasts-overview' || pageId === 'page-search') && !currentUser) {
       showToastNotification("Please log in to view this page.", "error");
       pageId = 'page-home';
     } else if (ADMIN_ONLY_PAGES.includes(pageId) && !isUserAdminRole(currentUser)) {
@@ -913,6 +913,8 @@
       renderStockOverviewTable();
     } else if (pageId === 'page-forecasts-overview') {
       renderForecastsOverviewTable();
+    } else if (pageId === 'page-search') {
+      focusSearchPageInput();
     }
 
     // Keep the iOS segmented control in sync with the page actually shown,
@@ -1084,8 +1086,6 @@
     });
   }
 
-  // Focus search box smoothly
-  //
   // NOTE: "Forecasts" and "Stock" used to be shortcut buttons that picked one
   // arbitrary medicine (whichever was most recently updated/eligible) and
   // jumped straight to its detail page - "Forecasts" scrolled to the top,
@@ -1097,15 +1097,22 @@
   // this same detail page for the full picture on one medicine. The old
   // pickShortcutTargetMedicine/openForecastShortcut/openStockShortcut
   // functions are gone; nothing else referenced them.
-  function focusSearchInput() {
-    showPage('page-pharmacist-dashboard');
+  //
+  // "Search" had the same problem in miniature: focusSearchInput() just sent
+  // you to page-pharmacist-dashboard and focused the search box that already
+  // lives there - so Search and Dashboard opened the same page, and the nav
+  // bar even lit up the "Dashboard" pill (not "Search") when you clicked it,
+  // since showPage('page-pharmacist-dashboard') is what syncActiveNavItem()
+  // actually saw. Search is now its own page (page-search, index.html) with
+  // its own .search-input-luxury/.search-dropdown-luxury pair - the same
+  // classes bindSearchHandlers() already wires up on every matching element
+  // at startup, so the live-dropdown/Enter-to-open behaviour works there
+  // with no extra JS. focusSearchPageInput() below just focuses that page's
+  // own input once showPage() has switched to it.
+  function focusSearchPageInput() {
     setTimeout(() => {
-      const input = document.querySelector('#page-pharmacist-dashboard .search-input-luxury');
-      if (input) {
-        input.focus();
-        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        showToastNotification("Ready to search! Type a medicine name, category, or symptom.", "info");
-      }
+      const input = document.getElementById('page-search-input');
+      if (input) input.focus();
     }, 200);
   }
 
@@ -3614,7 +3621,6 @@
   window.PharmaCastApp = {
     showPage,
     goBackFromUpload,
-    focusSearchInput,
     openMedicineDetail,
     placeRecommendedOrder,
     approveRequest,
@@ -3715,7 +3721,8 @@
       'page-pharmacist-medicines': 'page-pharmacist-medicines',
       'page-admin-upload': 'page-admin-upload',
       'page-stock-overview': 'page-stock-overview',
-      'page-forecasts-overview': 'page-forecasts-overview'
+      'page-forecasts-overview': 'page-forecasts-overview',
+      'page-search': 'page-search'
     };
     const target = map[pageId];
     document.querySelectorAll('.nav-segment .nav-link-item').forEach(el => {

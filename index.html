@@ -61,7 +61,7 @@
         <div id="nav-pharmacist" class="d-flex align-items-center gap-2" style="display: none; min-width:0;">
           <div class="nav-segment">
             <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-pharmacist-dashboard')" title="Dashboard"><i class="bi bi-grid-fill"></i> <span class="nav-label">Dashboard</span></a>
-            <a class="nav-link-item" onclick="window.PharmaCastApp.focusSearchInput()" title="Search Medicines"><i class="bi bi-search"></i> <span class="nav-label">Search</span></a>
+            <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-search')" title="Search Medicines"><i class="bi bi-search"></i> <span class="nav-label">Search</span></a>
             <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-forecasts-overview')" title="AI Demand Graphs"><i class="bi bi-graph-up-arrow"></i> <span class="nav-label">Forecasts</span></a>
             <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-stock-overview')" title="Stock Recommendations"><i class="bi bi-box-seam-fill"></i> <span class="nav-label">Stock</span></a>
             <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-pharmacist-medicines')" title="Medicine Library"><i class="bi bi-prescription2"></i> <span class="nav-label">Medicines</span></a>
@@ -478,6 +478,40 @@
         <div id="pharmacist-medicine-pagination" class="d-flex justify-content-between align-items-center mt-3">
           <!-- Dynamically populated -->
         </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         PAGE 4b-2: MEDICINE SEARCH
+         A dedicated "just search" page - distinct from the Dashboard (which
+         also carries stat cards + recently-viewed) and from the Medicine
+         Library (a management table with Remove/Upload-only filtering).
+         Reuses the exact .search-input-luxury / .search-dropdown-luxury
+         markup already used on the Dashboard - bindSearchHandlers() wires
+         every element with these classes at startup, so this input gets the
+         live-dropdown/Enter-to-open behaviour with no extra JS.
+         ====================================================================== -->
+    <section id="page-search" class="page-view">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 class="font-heading text-dark mb-1"><i class="bi bi-search text-success me-2"></i> Search Medicines</h2>
+          <p class="text-muted small mb-0">Find a medicine by name, category, or symptom and jump straight to its forecast.</p>
+        </div>
+        <button class="btn btn-sm btn-luxury-outline" onclick="window.PharmaCastApp.showPage('page-pharmacist-dashboard')">
+          <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </button>
+      </div>
+
+      <div class="card-luxury card-luxury-search p-4 text-center">
+        <label class="font-heading fs-5 mb-3 d-block text-dark">
+          <i class="bi bi-search text-success me-2"></i> Search Medicine by Name, Category, or Symptom
+        </label>
+        <div class="search-container-luxury">
+          <i class="bi bi-search search-icon-luxury"></i>
+          <input type="text" id="page-search-input" class="search-input-luxury" placeholder="e.g. Panadol, Piriton, Amoxicillin, Antipyretic..." autocomplete="off" />
+          <div class="search-dropdown-luxury text-start"></div>
+        </div>
+        <div class="mt-3 text-muted small">Start typing to see matches, or press Enter to open the top match.</div>
       </div>
     </section>
 
