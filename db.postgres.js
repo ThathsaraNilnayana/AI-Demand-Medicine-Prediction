@@ -271,6 +271,16 @@ CREATE TABLE IF NOT EXISTS predictions (
 CREATE INDEX IF NOT EXISTS idx_predictions_medicine ON predictions(medicine_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_month ON predictions(prediction_month);
 CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines(medicine_name);
+
+-- CREATE TABLE IF NOT EXISTS is a no-op against a table that already exists
+-- (i.e. every deployment after the first), so these three columns - added
+-- for the Loss/Accuracy training diagnostics - need their own ADD COLUMN
+-- IF NOT EXISTS to actually land on the live table. Same value is written
+-- to every forecast-month row for a given generation run, mirroring how
+-- model_type is already stored (denormalized per row, not a separate table).
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS backtest_smape REAL;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS loss_mae REAL;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_pct REAL;
 `;
 
 const ready = pool.query(SCHEMA_SQL)

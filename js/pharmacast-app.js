@@ -1334,12 +1334,26 @@
     }
 
     let forecast, modelType;
+    // Training diagnostics (Loss/Accuracy/sMAPE) - one number per generation
+    // run, not per forecast month. Populated from whichever branch below
+    // actually runs: the DB row (predictions.backtest_smape/loss_mae/
+    // accuracy_pct) when reading a cached forecast, or the fresh /generate
+    // response when nothing was cached yet. Declared here (not inside the
+    // try) so both branches can fill it in and the rendering code below has
+    // one place to read from regardless of which path was taken.
+    let modelMetrics = { backtest_smape: null, loss: null, accuracy: null, months_available: null, months_observed: null };
     try {
       const existingRows = await api.get(`/api/predictions/${med.id}`);
       if (Array.isArray(existingRows) && existingRows.length > 0) {
         const sorted = existingRows.slice().sort((a, b) => a.prediction_month.localeCompare(b.prediction_month));
         forecast = sorted.map(r => ({ month: r.prediction_month, predicted_demand: r.predicted_demand, confidence_score: r.confidence_score }));
         modelType = sorted[0].model_type;
+        // Older cached predictions (generated before this feature existed)
+        // won't have these columns populated - they'll come through as null,
+        // which the rendering code below already treats as "—".
+        modelMetrics.backtest_smape = sorted[0].backtest_smape ?? null;
+        modelMetrics.loss = sorted[0].loss_mae ?? null;
+        modelMetrics.accuracy = sorted[0].accuracy_pct ?? null;
       } else {
         // Nothing generated yet for this medicine - run the pipeline now.
         // Uses a raw fetch (not the shared `api` helper) so a 422
@@ -1361,6 +1375,11 @@
 
         forecast = body.predictions.map(p => ({ month: p.month, predicted_demand: p.predicted_demand, confidence_score: p.confidence_score }));
         modelType = body.model_type;
+        modelMetrics.backtest_smape = body.backtest_smape ?? null;
+        modelMetrics.loss = body.loss ?? null;
+        modelMetrics.accuracy = body.accuracy ?? null;
+        modelMetrics.months_available = body.months_available ?? null;
+        modelMetrics.months_observed = body.months_observed ?? null;
       }
     } catch (err) {
       if (loaderEl) loaderEl.style.display = 'none';
@@ -1386,41 +1405,64 @@
     document.getElementById('detail-model-rsquare').textContent = `Confidence: ${prediction.rSquare}`;
 
     const eqEl = document.getElementById('diag-eq');
-    const trendEl = document.getElementById('diag-trend');
     const rsqEl = document.getElementById('diag-rsquare');
-    const rmseEl = document.getElementById('diag-rmse');
-    const monsEl = document.getElementById('diag-monsoon');
+    const modelTypeEl = document.getElementById('diag-model-type');
+    const smapeEl = document.getElementById('diag-smape');
+    const monthsEl = document.getElementById('diag-months');
     const lossEl = document.getElementById('diag-loss');
     const accuracyEl = document.getElementById('diag-accuracy');
 
-    if (eqEl) eqEl.textContent = prediction.equation;
-    if (trendEl) trendEl.textContent = prediction.trendSlope;
     if (rsqEl) rsqEl.textContent = prediction.rSquare;
-    if (rmseEl) rmseEl.textContent = prediction.rmse;
-    if (monsEl) monsEl.textContent = prediction.monsoonFactor;
+    if (modelTypeEl) modelTypeEl.textContent = modelType || '—';
 
-    // Display Loss and Accuracy from the API response
-    if (lossEl) {
-      if (body.loss !== null && body.loss !== undefined) {
-        lossEl.textContent = body.loss + ' packs';
-        lossEl.style.color = '#fbbf24';  // warning yellow
+    if (eqEl) {
+      const parts = [];
+      if (modelType) parts.push(modelType);
+      if (modelMetrics.months_available != null) {
+        parts.push(`fit on ${modelMetrics.months_available} month(s) of real sales_data`);
       } else {
-        lossEl.textContent = '—';
+        parts.push('fit on real historical sales_data');
       }
+      eqEl.textContent = parts.join(' ');
+    }
+
+    if (monthsEl) {
+      monthsEl.textContent = modelMetrics.months_available != null
+        ? `${modelMetrics.months_available} mo`
+        : '—';
+    }
+
+    // Backtest sMAPE - out-of-sample error the model measured against itself
+    // (rolling-origin: forecast a held-out month, compare to what actually
+    // sold). Lower is better; this is also what confidence_score is derived
+    // from, so showing the raw number alongside it is not redundant - it's
+    // the evidence behind that percentage.
+    if (smapeEl) {
+      smapeEl.textContent = modelMetrics.backtest_smape != null
+        ? modelMetrics.backtest_smape.toFixed(1) + '%'
+        : '—';
+    }
+
+    // Loss (Mean Absolute Error, in packs) and Accuracy (% of held-out
+    // months forecast within 20% of the actual) - both computed on the same
+    // rolling-origin backtest as sMAPE above, see ml/predict.py rolling_origin_backtest().
+    if (lossEl) {
+      lossEl.textContent = modelMetrics.loss != null ? modelMetrics.loss + ' packs' : '—';
     }
     if (accuracyEl) {
-      if (body.accuracy !== null && body.accuracy !== undefined) {
-        accuracyEl.textContent = body.accuracy.toFixed(1) + '%';
+      if (modelMetrics.accuracy != null) {
+        accuracyEl.textContent = modelMetrics.accuracy.toFixed(1) + '%';
         // Color code: green if >70%, yellow if 40-70%, red if <40%
-        if (body.accuracy >= 70) {
+        if (modelMetrics.accuracy >= 70) {
           accuracyEl.style.color = '#10b981';  // success green
-        } else if (body.accuracy >= 40) {
+        } else if (modelMetrics.accuracy >= 40) {
           accuracyEl.style.color = '#fbbf24';  // warning yellow
         } else {
           accuracyEl.style.color = '#ef4444';  // danger red
         }
       } else {
         accuracyEl.textContent = '—';
+        accuracyEl.style.color = '';
       }
     }
 
@@ -2499,7 +2541,10 @@
           const avgConf = (body.predictions || []).reduce((a, p) => a + (p.confidence_score || 0), 0) / ((body.predictions || []).length || 1);
           confidences.push(avgConf);
           succeeded++;
-          log(`> [${med.name}] ${body.model_type} fit on ${body.months_available} months -> confidence ${(avgConf * 100).toFixed(1)}%`, 'text-light');
+          const lossTxt = body.loss != null ? body.loss : 'n/a';
+          const accTxt = body.accuracy != null ? body.accuracy.toFixed(1) + '%' : 'n/a';
+          const smapeTxt = body.backtest_smape != null ? body.backtest_smape.toFixed(1) : 'n/a';
+          log(`> [${med.name}] model_type: ${body.model_type}, loss: ${lossTxt}, accuracy: ${accTxt}, backtest_smape: ${smapeTxt} (confidence ${(avgConf * 100).toFixed(1)}%, ${body.months_available} months)`, 'text-light');
         }
       } catch (err) {
         log(`> [${med.name}] Error - ${err.message} (server may still be waking up - try Run again)`, 'text-danger');

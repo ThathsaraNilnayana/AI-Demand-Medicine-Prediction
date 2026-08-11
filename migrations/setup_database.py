@@ -101,6 +101,9 @@ CREATE TABLE predictions (
     recommended_order_qty INTEGER,
     confidence_score REAL,
     model_type TEXT,
+    backtest_smape REAL,
+    loss_mae REAL,
+    accuracy_pct REAL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (medicine_id) REFERENCES medicines(medicine_id)
 );

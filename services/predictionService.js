@@ -95,10 +95,17 @@ async function generatePredictionForMedicine(medicineId) {
         const required = point.predicted_demand + safetyStock;
         const recommendedOrderQty = Math.max(0, Math.round(required - currentStock));
 
+        // backtest_smape/loss/accuracy are per-generation-run metrics (one
+        // number for the whole medicine), not per-forecast-month - the same
+        // value is written to every row here, mirroring how model_type is
+        // already denormalized across the 12 rows. This is what lets a
+        // cached prediction (the common case - most medicines aren't
+        // re-trained on every page view) still show these metrics without
+        // re-running the ML engine.
         const insertResult = await db.run(`
-            INSERT INTO predictions (medicine_id, prediction_month, predicted_demand, recommended_order_qty, confidence_score, model_type)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [medicineId, `${point.month}-01`, point.predicted_demand, recommendedOrderQty, point.confidence_score, result.model_type]);
+            INSERT INTO predictions (medicine_id, prediction_month, predicted_demand, recommended_order_qty, confidence_score, model_type, backtest_smape, loss_mae, accuracy_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [medicineId, `${point.month}-01`, point.predicted_demand, recommendedOrderQty, point.confidence_score, result.model_type, result.backtest_smape, result.loss, result.accuracy]);
 
         inserted.push({
             id: insertResult.lastID,

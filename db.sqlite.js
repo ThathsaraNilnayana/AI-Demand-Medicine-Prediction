@@ -91,7 +91,15 @@ const MIGRATIONS = [
     ['medicines', 'created_from_upload', 'INTEGER DEFAULT 0'],
     // FR10: the rejection reason is mandatory and must be retained so it can
     // be shown to the pharmacist when they next try to log in.
-    ['users', 'rejection_reason', 'TEXT']
+    ['users', 'rejection_reason', 'TEXT'],
+    // Training diagnostics (Loss/Accuracy panel): same value written to every
+    // forecast-month row for a generation run, mirroring how model_type is
+    // already stored. Without these, cached predictions (the common case -
+    // most medicines' predictions were generated before this feature existed)
+    // have no loss/accuracy/smape to show until re-trained.
+    ['predictions', 'backtest_smape', 'REAL'],
+    ['predictions', 'loss_mae', 'REAL'],
+    ['predictions', 'accuracy_pct', 'REAL']
 ];
 
 for (const [table, column, type] of MIGRATIONS) {
