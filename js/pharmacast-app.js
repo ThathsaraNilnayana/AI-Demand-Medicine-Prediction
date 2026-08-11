@@ -1023,28 +1023,25 @@
 
     triggerAnimateNumbers();
     renderRecentMedicinesList(meds);
-    renderDashboardQuickSelect(meds);
+    loadRegisteredUsersCount();
   }
 
-  /** Populates the "Quick Select" badges above the dashboard search bar with
-   *  real medicines instead of the hardcoded MED-101..MED-110 demo IDs that
-   *  used to sit here (and no longer exist once real data replaces the demo
-   *  seed - clicking them silently opened whatever medicine happened to be
-   *  first in the list, not the one labeled on the badge). */
-  function renderDashboardQuickSelect(meds) {
-    const el = document.getElementById('dashboard-quick-select');
+  /** Fills the "Registered Users" stat card from the real user count. Uses
+   *  the same unauthenticated GET /api/stats endpoint the pending-approvals
+   *  badge already reads from (stats.totalUsers is every user row - active,
+   *  pending and inactive alike), so no new backend work was needed. Fetched
+   *  separately from the medicine counts above and re-triggers the counter
+   *  animation on arrival since it lands slightly after the initial paint. */
+  async function loadRegisteredUsersCount() {
+    const el = document.getElementById('stat-pharm-users');
     if (!el) return;
-    const real = meds.filter(m => /^\d+$/.test(String(m.id)));
-    if (real.length === 0) {
-      el.innerHTML = '<span class="text-muted">Upload a sales dataset to see medicines here.</span>';
-      return;
+    try {
+      const stats = await api.get('/api/stats');
+      el.setAttribute('data-target', stats.totalUsers || 0);
+      triggerAnimateNumbers();
+    } catch (err) {
+      console.warn('[PharmaCast] Could not load registered user count:', err.message);
     }
-    const picks = real.slice(0, 5);
-    el.innerHTML = '<strong>Quick Select: </strong>' + picks.map(m => `
-      <span class="badge bg-light text-dark border me-1" style="cursor:pointer;"
-            onclick="window.PharmaCastApp.openMedicineDetail('${m.id}')">
-        ${m.name}${m.dosage ? ` (${m.dosage})` : ''}
-      </span>`).join('');
   }
 
   function renderRecentMedicinesList(meds) {

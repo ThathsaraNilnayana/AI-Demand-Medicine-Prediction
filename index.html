@@ -329,24 +329,9 @@
         </div>
       </div>
 
-      <!-- Prominent Search Bar -->
-      <div class="card-luxury card-luxury-search p-4 mb-5 text-center">
-        <label class="font-heading fs-5 mb-3 d-block text-dark">
-          <i class="bi bi-search text-success me-2"></i> Search Medicine by Name, Category, or Symptom
-        </label>
-        <div class="search-container-luxury">
-          <i class="bi bi-search search-icon-luxury"></i>
-          <input type="text" class="search-input-luxury" placeholder="e.g. Panadol, Piriton, Amoxicillin, Antipyretic..." autocomplete="off" />
-          <div class="search-dropdown-luxury text-start"></div>
-        </div>
-        <div class="mt-3 text-muted small" id="dashboard-quick-select">
-          <!-- Populated with real medicines by renderPharmacistDashboard() -->
-        </div>
-      </div>
-
-      <!-- Quick Stats Cards (3 Cards) -->
+      <!-- Quick Stats Cards (4 Cards) -->
       <div class="row g-4 mb-5">
-        <div class="col-md-4">
+        <div class="col-6 col-lg-3">
           <div class="stat-card-luxury">
             <div>
               <span class="text-muted small text-uppercase fw-bold">Total Medicines</span>
@@ -358,7 +343,7 @@
           </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-6 col-lg-3">
           <div class="stat-card-luxury">
             <div>
               <span class="text-muted small text-uppercase fw-bold">Low in Stock (≤10)</span>
@@ -370,7 +355,7 @@
           </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-6 col-lg-3">
           <div class="stat-card-luxury">
             <div>
               <span class="text-muted small text-uppercase fw-bold">Out of Stock (0)</span>
@@ -378,6 +363,18 @@
             </div>
             <div class="stat-card-icon stat-icon-red">
               <i class="bi bi-exclamation-octagon-fill"></i>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-lg-3">
+          <div class="stat-card-luxury">
+            <div>
+              <span class="text-muted small text-uppercase fw-bold">Registered Users</span>
+              <h3 id="stat-pharm-users" class="font-heading fs-2 text-dark mb-0 mt-1" data-target="0">0</h3>
+            </div>
+            <div class="stat-card-icon stat-icon-emerald">
+              <i class="bi bi-people-fill"></i>
             </div>
           </div>
         </div>
