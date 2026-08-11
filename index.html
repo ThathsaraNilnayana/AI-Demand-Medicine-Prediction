@@ -62,8 +62,8 @@
           <div class="nav-segment">
             <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-pharmacist-dashboard')" title="Dashboard"><i class="bi bi-grid-fill"></i> <span class="nav-label">Dashboard</span></a>
             <a class="nav-link-item" onclick="window.PharmaCastApp.focusSearchInput()" title="Search Medicines"><i class="bi bi-search"></i> <span class="nav-label">Search</span></a>
-            <a class="nav-link-item" onclick="window.PharmaCastApp.openForecastShortcut()" title="AI Demand Graphs"><i class="bi bi-graph-up-arrow"></i> <span class="nav-label">Forecasts</span></a>
-            <a class="nav-link-item" onclick="window.PharmaCastApp.openStockShortcut()" title="Stock Recommendations"><i class="bi bi-box-seam-fill"></i> <span class="nav-label">Stock</span></a>
+            <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-forecasts-overview')" title="AI Demand Graphs"><i class="bi bi-graph-up-arrow"></i> <span class="nav-label">Forecasts</span></a>
+            <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-stock-overview')" title="Stock Recommendations"><i class="bi bi-box-seam-fill"></i> <span class="nav-label">Stock</span></a>
             <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-pharmacist-medicines')" title="Medicine Library"><i class="bi bi-prescription2"></i> <span class="nav-label">Medicines</span></a>
             <a class="nav-link-item" onclick="window.PharmaCastApp.showPage('page-admin-upload')" title="Upload Sales Data"><i class="bi bi-cloud-arrow-up-fill"></i> <span class="nav-label">Upload</span></a>
           </div>
@@ -476,6 +476,154 @@
           </table>
         </div>
         <div id="pharmacist-medicine-pagination" class="d-flex justify-content-between align-items-center mt-3">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         PAGE 4c: STOCK OVERVIEW
+         Full inventory across every medicine, sorted so the most urgent
+         (out-of-stock, then low-stock) rows surface first, with a quick
+         "Update Stock" action per row using the existing stock modal.
+         ====================================================================== -->
+    <section id="page-stock-overview" class="page-view">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 class="font-heading text-dark mb-1"><i class="bi bi-box-seam-fill text-success me-2"></i> Stock Overview</h2>
+          <p class="text-muted small mb-0">Every medicine's current stock level, most urgent first.</p>
+        </div>
+        <button class="btn btn-sm btn-luxury-outline" onclick="window.PharmaCastApp.showPage('page-pharmacist-dashboard')">
+          <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </button>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <div class="card-luxury p-4 text-center">
+            <div class="text-muted small text-uppercase fw-bold mb-1">Total Medicines</div>
+            <div class="display-6 fw-bold text-dark" id="stock-overview-total">—</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card-luxury p-4 text-center">
+            <div class="text-muted small text-uppercase fw-bold mb-1">Low in Stock</div>
+            <div class="display-6 fw-bold text-warning" id="stock-overview-low">—</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card-luxury p-4 text-center">
+            <div class="text-muted small text-uppercase fw-bold mb-1">Out of Stock</div>
+            <div class="display-6 fw-bold text-danger" id="stock-overview-out">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-luxury card-luxury-search p-4 mb-4">
+        <h5 class="font-heading text-dark mb-3"><i class="bi bi-search text-success me-2"></i> Search Medicine</h5>
+        <div class="row g-2 align-items-center">
+          <div class="col-md-9">
+            <div class="input-group input-group-lg">
+              <span class="input-group-text bg-white border-end-0"><i class="bi bi-capsule text-muted"></i></span>
+              <input type="text"
+                     id="stock-overview-search"
+                     class="form-control border-start-0"
+                     placeholder="Type a medicine name to filter the list"
+                     oninput="window.PharmaCastApp.handleStockOverviewSearch(this.value)" />
+              <button class="btn btn-outline-secondary" type="button"
+                      onclick="window.PharmaCastApp.clearStockOverviewSearch()" title="Clear search">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div id="stock-overview-status" class="text-muted small text-md-end">Showing all medicines</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-luxury p-4">
+        <div class="table-responsive">
+          <table class="table table-luxury align-middle">
+            <thead>
+              <tr>
+                <th>Medicine Name</th>
+                <th>Category</th>
+                <th>Current Stock</th>
+                <th>Reorder Level</th>
+                <th>Status</th>
+                <th style="min-width:140px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="stock-overview-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+        <div id="stock-overview-pagination" class="d-flex justify-content-between align-items-center mt-3">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         PAGE 4d: FORECASTS OVERVIEW
+         One row per medicine showing its next upcoming predicted demand, with
+         a click-through to the full forecast chart on the medicine detail page.
+         ====================================================================== -->
+    <section id="page-forecasts-overview" class="page-view">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 class="font-heading text-dark mb-1"><i class="bi bi-graph-up-arrow text-success me-2"></i> Forecasts Overview</h2>
+          <p class="text-muted small mb-0">Each medicine's next predicted demand month. Click into a medicine for the full forecast chart.</p>
+        </div>
+        <button class="btn btn-sm btn-luxury-outline" onclick="window.PharmaCastApp.showPage('page-pharmacist-dashboard')">
+          <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </button>
+      </div>
+
+      <div class="card-luxury card-luxury-search p-4 mb-4">
+        <h5 class="font-heading text-dark mb-3"><i class="bi bi-search text-success me-2"></i> Search Medicine</h5>
+        <div class="row g-2 align-items-center">
+          <div class="col-md-9">
+            <div class="input-group input-group-lg">
+              <span class="input-group-text bg-white border-end-0"><i class="bi bi-capsule text-muted"></i></span>
+              <input type="text"
+                     id="forecasts-overview-search"
+                     class="form-control border-start-0"
+                     placeholder="Type a medicine name to filter the list"
+                     oninput="window.PharmaCastApp.handleForecastsOverviewSearch(this.value)" />
+              <button class="btn btn-outline-secondary" type="button"
+                      onclick="window.PharmaCastApp.clearForecastsOverviewSearch()" title="Clear search">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div id="forecasts-overview-status" class="text-muted small text-md-end">Showing all medicines</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-luxury p-4">
+        <div class="table-responsive">
+          <table class="table table-luxury align-middle">
+            <thead>
+              <tr>
+                <th>Medicine Name</th>
+                <th>Next Forecast Month</th>
+                <th>Predicted Demand</th>
+                <th>Confidence</th>
+                <th>Model</th>
+                <th style="min-width:170px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="forecasts-overview-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+        <div id="forecasts-overview-pagination" class="d-flex justify-content-between align-items-center mt-3">
           <!-- Dynamically populated -->
         </div>
       </div>

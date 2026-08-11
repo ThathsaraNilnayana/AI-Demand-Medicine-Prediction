@@ -864,6 +864,9 @@
     } else if (pageId === 'page-pharmacist-medicines' && !currentUser) {
       showToastNotification("Please log in to view the medicine library.", "error");
       pageId = 'page-home';
+    } else if ((pageId === 'page-stock-overview' || pageId === 'page-forecasts-overview') && !currentUser) {
+      showToastNotification("Please log in to view this page.", "error");
+      pageId = 'page-home';
     } else if (ADMIN_ONLY_PAGES.includes(pageId) && !isUserAdminRole(currentUser)) {
       showToastNotification("Access denied: that area is restricted to administrators.", "error");
       pageId = currentUser ? 'page-pharmacist-dashboard' : 'page-home';
@@ -906,6 +909,10 @@
       renderManageMedicinesTable();
     } else if (pageId === 'page-pharmacist-medicines') {
       renderPharmacistMedicinesTable();
+    } else if (pageId === 'page-stock-overview') {
+      renderStockOverviewTable();
+    } else if (pageId === 'page-forecasts-overview') {
+      renderForecastsOverviewTable();
     }
 
     // Keep the iOS segmented control in sync with the page actually shown,
@@ -1078,103 +1085,18 @@
   }
 
   // Focus search box smoothly
-  /**
-   * The "Forecasts" / "Stock" nav shortcuts used to hardcode
-   * openMedicineDetail('MED-101') - a leftover demo medicine ID that doesn't
-   * exist once real data is loaded. openMedicineDetail() silently falls back
-   * to meds[0] when an ID isn't found, so this happened to still open SOME
-   * medicine's detail page - but which one was accidental, and it broke
-   * outright for an empty/just-registered account. This opens the most
-   * recently updated real (server-backed) medicine on purpose, or sends the
-   * user to the Medicine Library to pick one if there isn't one yet.
-   */
-  // Shared by openForecastShortcut/openStockShortcut: picks a server-backed
-  // medicine to open, or sends the user to the Medicine Library (with an
-  // explanatory toast) if there isn't one yet.
   //
-  // This used to just take the single most-recently-added/edited medicine,
-  // full stop. That's a problem the instant that medicine happens to have
-  // under 6 months of sales history (very likely right after any upload,
-  // since new/edited rows always sort first): the model genuinely can't
-  // forecast it, so openMedicineDetail correctly shows "Insufficient Data"
-  // and stops - but the user just sees Forecasts/Stock produce the SAME
-  // dead end every single time they click, forever, with no way to reach
-  // any of the other medicines that already have real forecasts. It reads
-  // exactly like "the button is broken," not "this one medicine lacks data."
-  // Now it asks the server which medicines actually have >=6 months of
-  // history (the same eligibility check Train Model uses) and picks the
-  // most recently touched ELIGIBLE one, only falling back to "most recent,
-  // period" if that check can't be reached.
-  // Returns the medicine, or null if it redirected instead.
-  async function pickShortcutTargetMedicine() {
-    const real = getMedicines().filter(m => /^\d+$/.test(String(m.id)));
-    if (real.length === 0) {
-      showPage('page-pharmacist-medicines');
-      showToastNotification('No medicines with sales history yet — pick one below to view its forecast.', 'info');
-      return null;
-    }
-
-    const byRecency = real.slice().sort((a, b) => String(b.lastUpdated || '').localeCompare(String(a.lastUpdated || '')));
-
-    try {
-      const elig = await api.get('/api/sales/trainable');
-      const eligibleIds = new Set(
-        (elig.medicines || []).filter(r => r.months >= 6).map(r => String(r.medicine_id))
-      );
-      const eligiblePick = byRecency.find(m => eligibleIds.has(String(m.id)));
-      if (eligiblePick) return eligiblePick;
-
-      // Real medicines exist, but NONE have enough history yet - that's a
-      // genuine "nothing to forecast yet" state, not a broken button. Say so.
-      if (eligibleIds.size === 0) {
-        showToastNotification(
-          'No medicine has 6+ months of sales history yet, so the AI model can\'t forecast any of them. '
-          + 'Upload more sales data, then try again.',
-          'warning'
-        );
-      }
-    } catch (err) {
-      console.warn('[PharmaCast] Could not check forecast eligibility, falling back to most-recent medicine:', err.message);
-    }
-
-    return byRecency[0];
-  }
-
-  // Which nav pill should stay lit up while page-medicine-detail is open.
-  // syncActiveNavItem() (called at the end of every showPage()) has no entry
-  // for page-medicine-detail, so without this the pill you just tapped lights
-  // up for a frame and is then stripped back to unselected the moment the
-  // page finishes switching - a visible "blink and go back" on the nav bar
-  // itself even though the page underneath navigated correctly.
-  let lastDetailEntryPoint = null; // 'forecast' | 'stock'
-
-  async function openForecastShortcut() {
-    const target = await pickShortcutTargetMedicine();
-    if (!target) return;
-    lastDetailEntryPoint = 'forecast';
-    openMedicineDetail(target.id);
-  }
-
-  // "Stock" nav link. Used to call openForecastShortcut() directly, which
-  // opened the exact same medicine detail page scrolled to the top (the
-  // forecast graph) - so clicking "Stock" never actually showed anything
-  // stock-related, it just looked like "Forecasts" again. This opens the
-  // same page but scrolls down to the Stock Recommendation panel once its
-  // content has finished loading (id="stock-recommendation-panel" in
-  // index.html).
-  async function openStockShortcut() {
-    const target = await pickShortcutTargetMedicine();
-    if (!target) return;
-    lastDetailEntryPoint = 'stock';
-    await openMedicineDetail(target.id);
-    setTimeout(() => {
-      const panel = document.getElementById('stock-recommendation-panel');
-      if (panel && panel.offsetParent !== null) {
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 150);
-  }
-
+  // NOTE: "Forecasts" and "Stock" used to be shortcut buttons that picked one
+  // arbitrary medicine (whichever was most recently updated/eligible) and
+  // jumped straight to its detail page - "Forecasts" scrolled to the top,
+  // "Stock" scrolled to the stock panel further down the SAME page. So the
+  // two nav items opened what was, for most users, literally the same page.
+  // They're now real overview pages - see renderStockOverviewTable() and
+  // renderForecastsOverviewTable() further down - that list every medicine's
+  // stock level / every medicine's next forecast, with a click-through to
+  // this same detail page for the full picture on one medicine. The old
+  // pickShortcutTargetMedicine/openForecastShortcut/openStockShortcut
+  // functions are gone; nothing else referenced them.
   function focusSearchInput() {
     showPage('page-pharmacist-dashboard');
     setTimeout(() => {
@@ -2852,6 +2774,235 @@
     });
   }
 
+  /* ─── STOCK OVERVIEW (full inventory, most urgent first) ───
+     Reached via the "Stock" nav link. GET /api/stock already joins in
+     medicine_name but sorts alert_status alphabetically (ORDER BY ... DESC
+     gives yellow, red, green - not the "most urgent first" order pharmacists
+     actually want), so it's re-sorted client-side by an explicit priority
+     map. Reuses the existing modal-update-stock / openStockModal /
+     saveStockUpdate machinery, which looks medicines up via getMedicines(),
+     so the client cache is refreshed first. */
+  let stockOverviewSearchTerm = '';
+  let stockOverviewPage = 0;
+  let stockOverviewRows = [];
+  const STOCK_ALERT_PRIORITY = { red: 0, yellow: 1, green: 2 };
+
+  function handleStockOverviewSearch(term) {
+    stockOverviewSearchTerm = term;
+    stockOverviewPage = 0;
+    renderStockOverviewList();
+  }
+
+  function clearStockOverviewSearch() {
+    stockOverviewSearchTerm = '';
+    stockOverviewPage = 0;
+    const input = document.getElementById('stock-overview-search');
+    if (input) input.value = '';
+    renderStockOverviewList();
+  }
+
+  function changeStockOverviewPage(delta) {
+    stockOverviewPage += delta;
+    if (stockOverviewPage < 0) stockOverviewPage = 0;
+    renderStockOverviewList();
+  }
+
+  /** Fetches fresh stock data from the server, then renders it. Called on
+   *  page entry (showPage) so it's always current, e.g. after a stock edit
+   *  made elsewhere in the app. */
+  async function renderStockOverviewTable() {
+    try {
+      await syncMedicinesFromServer();
+      stockOverviewRows = await api.get('/api/stock');
+    } catch (err) {
+      console.warn('[PharmaCast] Could not load stock overview:', err.message);
+      stockOverviewRows = [];
+    }
+    renderStockOverviewList();
+  }
+
+  /** Renders the already-fetched stockOverviewRows into the table (search/
+   *  paginate/sort only - no network call), so search-as-you-type doesn't
+   *  re-fetch on every keystroke. */
+  function renderStockOverviewList() {
+    const tbody = document.getElementById('stock-overview-tbody');
+    if (!tbody) return;
+
+    const q = String(stockOverviewSearchTerm || '').trim().toLowerCase();
+    let rows = stockOverviewRows.filter(r => !q || String(r.medicine_name || '').toLowerCase().includes(q));
+    rows = rows.slice().sort((a, b) =>
+      (STOCK_ALERT_PRIORITY[a.alert_status] ?? 3) - (STOCK_ALERT_PRIORITY[b.alert_status] ?? 3)
+    );
+
+    const total = stockOverviewRows.length;
+    const totalCount = rows.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / MED_PAGE_SIZE));
+    if (stockOverviewPage > totalPages - 1) stockOverviewPage = totalPages - 1;
+    if (stockOverviewPage < 0) stockOverviewPage = 0;
+    const pageRows = rows.slice(stockOverviewPage * MED_PAGE_SIZE, (stockOverviewPage + 1) * MED_PAGE_SIZE);
+
+    const totalEl = document.getElementById('stock-overview-total');
+    const lowEl = document.getElementById('stock-overview-low');
+    const outEl = document.getElementById('stock-overview-out');
+    if (totalEl) totalEl.textContent = total;
+    if (lowEl) lowEl.textContent = stockOverviewRows.filter(r => r.alert_status === 'yellow').length;
+    if (outEl) outEl.textContent = stockOverviewRows.filter(r => r.alert_status === 'red').length;
+
+    const statusEl = document.getElementById('stock-overview-status');
+    if (statusEl) {
+      statusEl.textContent = q ? `${totalCount} match${totalCount === 1 ? '' : 'es'}` : `Showing all ${total} medicines`;
+    }
+    renderMedicinePagination('stock-overview-pagination', stockOverviewPage, totalCount, 'changeStockOverviewPage');
+
+    tbody.innerHTML = '';
+    if (pageRows.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">
+            <i class="bi bi-search me-2"></i>
+            Medicine Not Found${q ? ` for "${stockOverviewSearchTerm.trim()}"` : ''}.
+          </td>
+        </tr>`;
+      return;
+    }
+
+    pageRows.forEach(r => {
+      let badgeHtml;
+      if (r.alert_status === 'red') badgeHtml = `<span class="badge-stock-red">Out of Stock (${r.quantity})</span>`;
+      else if (r.alert_status === 'yellow') badgeHtml = `<span class="badge-stock-yellow">Low Stock (${r.quantity})</span>`;
+      else badgeHtml = `<span class="badge-stock-green">In Stock (${r.quantity})</span>`;
+
+      const med = getMedicines().find(m => String(m.id) === String(r.medicine_id));
+      const category = med ? med.category : '';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><div class="font-heading text-dark">${r.medicine_name}</div></td>
+        <td><span class="badge bg-light text-dark border">${category}</span></td>
+        <td>${r.quantity}</td>
+        <td>${r.reorder_level != null ? r.reorder_level : '-'}</td>
+        <td>${badgeHtml}</td>
+        <td>
+          <button class="btn btn-sm btn-luxury-outline py-1 px-2"
+                  onclick="window.PharmaCastApp.openStockModal('${r.medicine_id}')"
+                  title="Update the current stock quantity">
+            <i class="bi bi-box-seam-fill"></i> Update
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* ─── FORECASTS OVERVIEW (next upcoming prediction per medicine) ───
+     Reached via the "Forecasts" nav link. GET /api/predictions returns every
+     future prediction row for every medicine (up to ~12 months each), so
+     this groups by medicine_id client-side and keeps only the earliest
+     upcoming prediction_month per medicine - i.e. "what's coming up next"
+     rather than a wall of every future month for every medicine. */
+  let forecastsOverviewSearchTerm = '';
+  let forecastsOverviewPage = 0;
+  let forecastsOverviewRows = [];
+
+  function handleForecastsOverviewSearch(term) {
+    forecastsOverviewSearchTerm = term;
+    forecastsOverviewPage = 0;
+    renderForecastsOverviewList();
+  }
+
+  function clearForecastsOverviewSearch() {
+    forecastsOverviewSearchTerm = '';
+    forecastsOverviewPage = 0;
+    const input = document.getElementById('forecasts-overview-search');
+    if (input) input.value = '';
+    renderForecastsOverviewList();
+  }
+
+  function changeForecastsOverviewPage(delta) {
+    forecastsOverviewPage += delta;
+    if (forecastsOverviewPage < 0) forecastsOverviewPage = 0;
+    renderForecastsOverviewList();
+  }
+
+  async function renderForecastsOverviewTable() {
+    try {
+      await syncMedicinesFromServer();
+      const allRows = await api.get('/api/predictions');
+      const nextByMedicine = new Map();
+      for (const row of allRows) {
+        const existing = nextByMedicine.get(row.medicine_id);
+        if (!existing || String(row.prediction_month) < String(existing.prediction_month)) {
+          nextByMedicine.set(row.medicine_id, row);
+        }
+      }
+      forecastsOverviewRows = Array.from(nextByMedicine.values());
+    } catch (err) {
+      console.warn('[PharmaCast] Could not load forecasts overview:', err.message);
+      forecastsOverviewRows = [];
+    }
+    renderForecastsOverviewList();
+  }
+
+  function renderForecastsOverviewList() {
+    const tbody = document.getElementById('forecasts-overview-tbody');
+    if (!tbody) return;
+
+    const q = String(forecastsOverviewSearchTerm || '').trim().toLowerCase();
+    const rows = forecastsOverviewRows
+      .filter(r => !q || String(r.medicine_name || '').toLowerCase().includes(q))
+      .slice()
+      .sort((a, b) => String(a.medicine_name || '').localeCompare(String(b.medicine_name || '')));
+
+    const total = forecastsOverviewRows.length;
+    const totalCount = rows.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / MED_PAGE_SIZE));
+    if (forecastsOverviewPage > totalPages - 1) forecastsOverviewPage = totalPages - 1;
+    if (forecastsOverviewPage < 0) forecastsOverviewPage = 0;
+    const pageRows = rows.slice(forecastsOverviewPage * MED_PAGE_SIZE, (forecastsOverviewPage + 1) * MED_PAGE_SIZE);
+
+    const statusEl = document.getElementById('forecasts-overview-status');
+    if (statusEl) {
+      statusEl.textContent = q ? `${totalCount} match${totalCount === 1 ? '' : 'es'}` : `Showing all ${total} medicines with a forecast`;
+    }
+    renderMedicinePagination('forecasts-overview-pagination', forecastsOverviewPage, totalCount, 'changeForecastsOverviewPage');
+
+    tbody.innerHTML = '';
+    if (pageRows.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">
+            <i class="bi bi-graph-up-arrow me-2"></i>
+            ${q ? `No forecasted medicine found for "${forecastsOverviewSearchTerm.trim()}".` : 'No forecasts yet — generate one from a medicine\'s detail page.'}
+          </td>
+        </tr>`;
+      return;
+    }
+
+    pageRows.forEach(r => {
+      const confPct = r.confidence_score != null ? Math.round(r.confidence_score * 100) : null;
+      const confHtml = confPct != null
+        ? `<span class="${confPct >= 70 ? 'text-success' : confPct >= 40 ? 'text-warning' : 'text-danger'} fw-bold">${confPct}%</span>`
+        : '<span class="text-muted small">-</span>';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><div class="font-heading text-dark">${r.medicine_name}</div></td>
+        <td>${formatMonthLabel(String(r.prediction_month).slice(0, 7))}</td>
+        <td>${r.predicted_demand != null ? r.predicted_demand : '-'}</td>
+        <td>${confHtml}</td>
+        <td><span class="badge bg-light text-dark border">${r.model_type || '-'}</span></td>
+        <td>
+          <button class="btn btn-sm btn-luxury-outline py-1 px-2"
+                  onclick="window.PharmaCastApp.openMedicineDetail('${r.medicine_id}')"
+                  title="View the full forecast chart and stock recommendation">
+            <i class="bi bi-graph-up-arrow"></i> View Full Forecast
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
   /** Re-runs the AI demand forecast for one medicine (FR28-FR30). */
   async function refreshForecastFor(medId) {
     const med = getMedicines().find(m => m.id === medId);
@@ -2927,6 +3078,7 @@
       await syncMedicinesFromServer();
       renderPharmacistMedicinesTable();
       if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+      if (typeof renderStockOverviewTable === 'function') renderStockOverviewTable();
       if (currentUser && !isUserAdminRole(currentUser) && typeof renderPharmacistDashboard === 'function') {
         renderPharmacistDashboard();
       } else if (typeof renderAdminDashboard === 'function') {
@@ -3463,8 +3615,6 @@
     showPage,
     goBackFromUpload,
     focusSearchInput,
-    openForecastShortcut,
-    openStockShortcut,
     openMedicineDetail,
     placeRecommendedOrder,
     approveRequest,
@@ -3495,6 +3645,14 @@
     openStockModal,
     closeStockModal,
     saveStockUpdate,
+    handleStockOverviewSearch,
+    clearStockOverviewSearch,
+    changeStockOverviewPage,
+    renderStockOverviewTable,
+    handleForecastsOverviewSearch,
+    clearForecastsOverviewSearch,
+    changeForecastsOverviewPage,
+    renderForecastsOverviewTable,
     loadDemoCSV,
     downloadSampleCSV,
     testShowTimeoutWarning,
@@ -3542,19 +3700,10 @@
 
   /** Highlights whichever nav pill corresponds to the page now on screen. */
   function syncActiveNavItem(pageId) {
-    // page-medicine-detail isn't its own nav pill - it's reached via the
-    // "Forecasts" or "Stock" shortcuts, so keep whichever of those two was
-    // actually clicked lit up instead of falling through to "no match" and
-    // stripping the active state the moment the page switches (see
-    // lastDetailEntryPoint above).
-    if (pageId === 'page-medicine-detail') {
-      const fnName = lastDetailEntryPoint === 'stock' ? 'openStockShortcut' : 'openForecastShortcut';
-      document.querySelectorAll('.nav-segment .nav-link-item').forEach(el => {
-        const onclick = el.getAttribute('onclick') || '';
-        el.classList.toggle('active', onclick.includes(fnName));
-      });
-      return;
-    }
+    // page-medicine-detail isn't its own nav pill - it's reached by clicking
+    // into a specific medicine from the Stock/Forecasts overview pages or
+    // the Medicine Library, not directly from the nav bar - so no pill lights
+    // up while it's open, same as the Medicine Library's own "View" button.
 
     const map = {
       'page-home': 'page-home',
@@ -3564,7 +3713,9 @@
       'page-admin-approvals': 'page-admin-approvals',
       'page-admin-medicines': 'page-admin-medicines',
       'page-pharmacist-medicines': 'page-pharmacist-medicines',
-      'page-admin-upload': 'page-admin-upload'
+      'page-admin-upload': 'page-admin-upload',
+      'page-stock-overview': 'page-stock-overview',
+      'page-forecasts-overview': 'page-forecasts-overview'
     };
     const target = map[pageId];
     document.querySelectorAll('.nav-segment .nav-link-item').forEach(el => {
