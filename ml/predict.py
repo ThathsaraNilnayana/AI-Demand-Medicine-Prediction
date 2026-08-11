@@ -387,19 +387,24 @@ def _smape(actual, forecast):
     return float(np.mean(2.0 * np.abs(f - a) / denom) * 100.0)
 
 
-def rolling_origin_smape(series, max_folds=3, weight=None):
+def rolling_origin_backtest(series, max_folds=3, weight=None):
     """
-    Measure genuine out-of-sample error by re-fitting on truncated history.
+    Run the rolling-origin backtest ONCE and derive every out-of-sample metric
+    (sMAPE, MAE, accuracy) from the same (actual, predicted) pairs.
 
-    For each fold we hide the final month, forecast it from the remaining
-    data, and compare. This is the number the confidence score is built on -
-    unlike in-sample R^2 it cannot be gamed by adding parameters, because
-    every point scored was invisible to the model that predicted it.
+    This used to be three separate functions - rolling_origin_smape(),
+    _calculate_mae(), _calculate_accuracy() - each re-fitting the model on the
+    same truncated series independently. On the SARIMA tiers that fit is a 6x3
+    order-candidate grid search, so tripling the loop tripled generation time
+    for every SARIMA/SARIMA+STL medicine (measured: ~80s -> ~230s on Render's
+    free-tier CPU for a single medicine). With ~2,969 medicines regenerated
+    nightly, that difference is the gap between a job that finishes and one
+    that doesn't. Fit once per fold, read off every metric from the result.
 
-    Returns None when the series is too short to hold anything out.
+    Returns a dict: {smape, mae, accuracy} - each None if unmeasurable.
     """
     n = len(series)
-    errors = []
+    pairs = []  # (actual, predicted) for each successful fold
     for k in range(1, max_folds + 1):
         cutoff = n - k
         if cutoff < MIN_MONTHS:
@@ -410,10 +415,27 @@ def rolling_origin_smape(series, max_folds=3, weight=None):
             preds, _ = _forecast(train, 1, weight=weight)
         except Exception:
             continue
-        errors.append(_smape(actual, preds[:1]))
-    if not errors:
-        return None
-    return float(np.mean(errors))
+        pairs.append((float(actual[0]), float(preds[0])))
+
+    if not pairs:
+        return {'smape': None, 'mae': None, 'accuracy': None}
+
+    actuals = np.array([a for a, _ in pairs])
+    preds = np.array([p for _, p in pairs])
+
+    smape = float(np.mean([_smape([a], [p]) for a, p in pairs]))
+    mae = float(np.mean(np.abs(preds - actuals)))
+
+    # Accuracy is only assessable where the actual is non-zero (a 0% relative
+    # tolerance band around 0 would reject every prediction, including 0).
+    nonzero = actuals > 0
+    if np.any(nonzero):
+        within_tol = np.abs(preds[nonzero] - actuals[nonzero]) <= actuals[nonzero] * 0.20
+        accuracy = float(np.mean(within_tol)) * 100.0
+    else:
+        accuracy = None
+
+    return {'smape': smape, 'mae': mae, 'accuracy': accuracy}
 
 
 def _confidence_from_smape(smape_value, horizon_index, months_available):
@@ -435,68 +457,6 @@ def _confidence_from_smape(smape_value, horizon_index, months_available):
     history_cap = min(1.0, months_available / float(TIER3_MONTHS))
     score = base * horizon_decay * (0.6 + 0.4 * history_cap)
     return float(np.clip(score, CONF_FLOOR, CONF_CEIL))
-
-
-def _calculate_mae(series, weight=None):
-    """
-    Calculate Mean Absolute Error on rolling-origin validation folds.
-
-    Returns MAE averaged across all folds, or None if unmeasurable.
-    """
-    n = len(series)
-    errors = []
-    for k in range(1, 4):
-        cutoff = n - k
-        if cutoff < MIN_MONTHS:
-            break
-        train = series.iloc[:cutoff]
-        actual = series.iloc[cutoff:cutoff + 1].values
-        try:
-            preds, _ = _forecast(train, 1, weight=weight)
-        except Exception:
-            continue
-        mae = float(np.mean(np.abs(preds[:1] - actual)))
-        errors.append(mae)
-
-    if not errors:
-        return None
-    return float(np.mean(errors))
-
-
-def _calculate_accuracy(series, tolerance_pct=0.20, weight=None):
-    """
-    Calculate forecast accuracy as % of predictions within tolerance_pct of actual.
-
-    For example, with tolerance_pct=0.20, a prediction is "accurate" if it's
-    within 20% of the actual value. Returns a 0-100 score.
-
-    Returns accuracy percentage, or None if unmeasurable.
-    """
-    n = len(series)
-    accuracies = []
-    for k in range(1, 4):
-        cutoff = n - k
-        if cutoff < MIN_MONTHS:
-            break
-        train = series.iloc[:cutoff]
-        actual = series.iloc[cutoff:cutoff + 1].values[0]
-        if actual <= 0:
-            # Can't assess accuracy on zero/negative actuals
-            continue
-        try:
-            preds, _ = _forecast(train, 1, weight=weight)
-            pred = preds[0]
-            tolerance = actual * tolerance_pct
-            if abs(pred - actual) <= tolerance:
-                accuracies.append(1.0)
-            else:
-                accuracies.append(0.0)
-        except Exception:
-            continue
-
-    if not accuracies:
-        return None
-    return float(np.mean(accuracies)) * 100.0
 
 
 # ────────────────────────────── entry point ──────────────────────────────
@@ -531,9 +491,10 @@ def generate_prediction(monthly_data, horizon=12):
 
     weight = _shrinkage_weight(series)
     preds, model_type = _forecast(series, horizon, weight=weight)
-    smape_value = rolling_origin_smape(series, weight=weight)
-    mae_value = _calculate_mae(series, weight=weight)
-    accuracy_value = _calculate_accuracy(series, tolerance_pct=0.20, weight=weight)
+    backtest = rolling_origin_backtest(series, weight=weight)
+    smape_value = backtest['smape']
+    mae_value = backtest['mae']
+    accuracy_value = backtest['accuracy']
     future_months = next_months(series.index[-1], horizon)
 
     forecast = []

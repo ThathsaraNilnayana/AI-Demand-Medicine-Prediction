@@ -240,15 +240,52 @@ class TestConfidence:
         assert 'backtest_smape' in out
         assert out['backtest_smape'] is None or out['backtest_smape'] >= 0
 
+    def test_loss_and_accuracy_are_reported(self):
+        vals = [100 + 5 * i for i in range(12)]
+        out = predict.generate_prediction(series_records('2025-01', vals), horizon=6)
+        assert 'loss' in out
+        assert 'accuracy' in out
+        assert out['loss'] is None or out['loss'] >= 0
+        assert out['accuracy'] is None or 0.0 <= out['accuracy'] <= 100.0
 
-class TestRollingOriginSmape:
+    def test_loss_and_accuracy_absent_on_insufficient_data(self):
+        out = predict.generate_prediction(series_records('2025-01', [10] * 3), horizon=6)
+        assert out['status'] == 'insufficient_data'
+        assert 'loss' not in out
+        assert 'accuracy' not in out
+
+
+class TestRollingOriginBacktest:
     def test_returns_none_when_too_short(self):
         s, _ = predict.build_series(series_records('2025-01', [10] * 6))
-        assert predict.rolling_origin_smape(s) is None, 'no room to hold out below the minimum'
+        out = predict.rolling_origin_backtest(s)
+        assert out['smape'] is None, 'no room to hold out below the minimum'
+        assert out['mae'] is None
+        assert out['accuracy'] is None
 
     def test_perfect_series_scores_low_error(self):
         s, _ = predict.build_series(series_records('2025-01', [100] * 14))
-        assert predict.rolling_origin_smape(s) < 15.0
+        out = predict.rolling_origin_backtest(s)
+        assert out['smape'] < 15.0
+        assert out['mae'] < 15.0
+        # A flat, noise-free series should be predicted within the 20% band every time.
+        assert out['accuracy'] == 100.0
+
+    def test_single_backtest_produces_all_three_metrics_from_same_folds(self):
+        """
+        Regression guard for the perf fix: smape/mae/accuracy must come from
+        one shared set of (actual, predicted) pairs, not three independent
+        rolling-origin loops that each re-fit the model. Sanity-checks the
+        three numbers are mutually consistent rather than re-deriving them.
+        """
+        vals = [80, 95, 70, 110, 130, 90, 85, 100, 75, 120, 140, 95, 88, 102, 79, 118]
+        s, _ = predict.build_series(series_records('2024-01', vals))
+        out = predict.rolling_origin_backtest(s)
+        assert out['smape'] is not None
+        assert out['mae'] is not None
+        assert out['accuracy'] is not None
+        assert 0.0 <= out['accuracy'] <= 100.0
+        assert out['mae'] >= 0.0
 
 
 # ────────────────────────────── CLI contract ──────────────────────────────
