@@ -120,6 +120,9 @@ async function generatePredictionForMedicine(medicineId) {
         // short to hold anything out. This is what the confidence scores are
         // derived from, so it belongs in the response.
         backtest_smape: result.backtest_smape,
+        // Training metrics
+        loss: result.loss,  // Mean Absolute Error from validation folds
+        accuracy: result.accuracy,  // % of predictions within 20% of actual
         predictions: inserted
     };
 }

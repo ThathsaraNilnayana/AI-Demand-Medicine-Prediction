@@ -1390,12 +1390,39 @@
     const rsqEl = document.getElementById('diag-rsquare');
     const rmseEl = document.getElementById('diag-rmse');
     const monsEl = document.getElementById('diag-monsoon');
+    const lossEl = document.getElementById('diag-loss');
+    const accuracyEl = document.getElementById('diag-accuracy');
 
     if (eqEl) eqEl.textContent = prediction.equation;
     if (trendEl) trendEl.textContent = prediction.trendSlope;
     if (rsqEl) rsqEl.textContent = prediction.rSquare;
     if (rmseEl) rmseEl.textContent = prediction.rmse;
     if (monsEl) monsEl.textContent = prediction.monsoonFactor;
+
+    // Display Loss and Accuracy from the API response
+    if (lossEl) {
+      if (body.loss !== null && body.loss !== undefined) {
+        lossEl.textContent = body.loss + ' packs';
+        lossEl.style.color = '#fbbf24';  // warning yellow
+      } else {
+        lossEl.textContent = '—';
+      }
+    }
+    if (accuracyEl) {
+      if (body.accuracy !== null && body.accuracy !== undefined) {
+        accuracyEl.textContent = body.accuracy.toFixed(1) + '%';
+        // Color code: green if >70%, yellow if 40-70%, red if <40%
+        if (body.accuracy >= 70) {
+          accuracyEl.style.color = '#10b981';  // success green
+        } else if (body.accuracy >= 40) {
+          accuracyEl.style.color = '#fbbf24';  // warning yellow
+        } else {
+          accuracyEl.style.color = '#ef4444';  // danger red
+        }
+      } else {
+        accuracyEl.textContent = '—';
+      }
+    }
 
     // The chart is drawn with Chart.js, loaded from a CDN (index.html). If that
     // load ever fails - offline, blocked network, slow connection - `Chart` is

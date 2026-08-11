@@ -437,6 +437,68 @@ def _confidence_from_smape(smape_value, horizon_index, months_available):
     return float(np.clip(score, CONF_FLOOR, CONF_CEIL))
 
 
+def _calculate_mae(series, weight=None):
+    """
+    Calculate Mean Absolute Error on rolling-origin validation folds.
+
+    Returns MAE averaged across all folds, or None if unmeasurable.
+    """
+    n = len(series)
+    errors = []
+    for k in range(1, 4):
+        cutoff = n - k
+        if cutoff < MIN_MONTHS:
+            break
+        train = series.iloc[:cutoff]
+        actual = series.iloc[cutoff:cutoff + 1].values
+        try:
+            preds, _ = _forecast(train, 1, weight=weight)
+        except Exception:
+            continue
+        mae = float(np.mean(np.abs(preds[:1] - actual)))
+        errors.append(mae)
+
+    if not errors:
+        return None
+    return float(np.mean(errors))
+
+
+def _calculate_accuracy(series, tolerance_pct=0.20, weight=None):
+    """
+    Calculate forecast accuracy as % of predictions within tolerance_pct of actual.
+
+    For example, with tolerance_pct=0.20, a prediction is "accurate" if it's
+    within 20% of the actual value. Returns a 0-100 score.
+
+    Returns accuracy percentage, or None if unmeasurable.
+    """
+    n = len(series)
+    accuracies = []
+    for k in range(1, 4):
+        cutoff = n - k
+        if cutoff < MIN_MONTHS:
+            break
+        train = series.iloc[:cutoff]
+        actual = series.iloc[cutoff:cutoff + 1].values[0]
+        if actual <= 0:
+            # Can't assess accuracy on zero/negative actuals
+            continue
+        try:
+            preds, _ = _forecast(train, 1, weight=weight)
+            pred = preds[0]
+            tolerance = actual * tolerance_pct
+            if abs(pred - actual) <= tolerance:
+                accuracies.append(1.0)
+            else:
+                accuracies.append(0.0)
+        except Exception:
+            continue
+
+    if not accuracies:
+        return None
+    return float(np.mean(accuracies)) * 100.0
+
+
 # ────────────────────────────── entry point ──────────────────────────────
 
 def generate_prediction(monthly_data, horizon=12):
@@ -470,6 +532,8 @@ def generate_prediction(monthly_data, horizon=12):
     weight = _shrinkage_weight(series)
     preds, model_type = _forecast(series, horizon, weight=weight)
     smape_value = rolling_origin_smape(series, weight=weight)
+    mae_value = _calculate_mae(series, weight=weight)
+    accuracy_value = _calculate_accuracy(series, tolerance_pct=0.20, weight=weight)
     future_months = next_months(series.index[-1], horizon)
 
     forecast = []
@@ -486,6 +550,8 @@ def generate_prediction(monthly_data, horizon=12):
         'months_available': months_available,
         'months_observed': months_observed,
         'backtest_smape': None if smape_value is None else round(smape_value, 1),
+        'loss': None if mae_value is None else round(mae_value, 2),  # Mean Absolute Error
+        'accuracy': None if accuracy_value is None else round(accuracy_value, 1),  # % within 20% tolerance
         'forecast': forecast,
     }
 
