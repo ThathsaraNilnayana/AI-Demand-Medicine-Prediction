@@ -582,6 +582,19 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   pointer-events: none;
 }
 
+/* Labels inside the dark ML Diagnostics panel (index.html, medicine detail
+   page). Bootstrap's `.text-muted` resolves to --bs-secondary-color, which
+   defaults to a near-black rgba(33,37,41,.75) unless the page opts into
+   [data-bs-theme=dark] - this site never does, since everything else is the
+   light "luxury" theme. That made every tile's uppercase label (Model Type,
+   Backtest sMAPE, etc.) render near-black text on the panel's near-black
+   background: technically present, invisible in practice. The values
+   themselves were fine because they use explicit colored classes
+   (text-info/text-warning/etc.), not text-muted. */
+.diag-label {
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+
 .search-dropdown-luxury {
   position: absolute;
   top: calc(100% + 10px);
