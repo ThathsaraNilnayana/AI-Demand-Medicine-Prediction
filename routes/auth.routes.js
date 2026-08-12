@@ -220,7 +220,7 @@ router.post('/change-password',
                     lockedUntil = new Date(Date.now() + config.loginLockoutMinutes * 60 * 1000).toISOString();
                 }
                 await db.run(
-                    'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE user_id = ?',
+                    'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE user_id = ?',mm
                     [lockedUntil ? 0 : attempts, lockedUntil, user.user_id]
                 );
                 if (lockedUntil) {
