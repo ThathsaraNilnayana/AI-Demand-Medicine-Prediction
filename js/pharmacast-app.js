@@ -1732,14 +1732,14 @@
     try {
       users = await api.get('/api/users');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Could not load accounts from server: ${escapeHtml(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Could not load accounts from server: ${escapeHtml(err.message)}</td></tr>`;
       return;
     }
 
     tbody.innerHTML = '';
 
     if (users.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">No accounts registered yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">No accounts registered yet.</td></tr>`;
       return;
     }
 
@@ -1764,17 +1764,19 @@
         <td>
           <div class="fw-bold text-dark">${escapeHtml(u.full_name)} ${isSelf ? '<span class="badge bg-light text-muted border ms-1">You</span>' : ''}</div>
           <div class="small text-muted">${escapeHtml(u.email)}</div>
+          <div class="small text-muted"><i class="bi bi-calendar3 me-1"></i>Registered ${formatUserDate(u.created_at)}</div>
         </td>
         <td>
-          <div class="text-dark"><i class="bi bi-telephone text-muted me-1"></i>${orDash(u.phone)}</div>
+          <div class="text-dark text-nowrap"><i class="bi bi-telephone text-muted me-1"></i>${orDash(u.phone)}</div>
           <div class="small text-muted"><i class="bi bi-shop me-1"></i>${orDash(u.pharmacy_name)}</div>
         </td>
-        <td><code class="text-dark fs-6">${escapeHtml(u.username)}</code></td>
-        <td>${roleBadge}</td>
-        <td>${statusBadge}</td>
-        <td class="small">${formatUserDate(u.created_at)}</td>
+        <td><code class="text-dark">${escapeHtml(u.username)}</code></td>
         <td>
-          <div class="d-flex flex-wrap gap-1">
+          <div class="mb-1">${roleBadge}</div>
+          <div>${statusBadge}</div>
+        </td>
+        <td>
+          <div class="table-actions">
             ${isSelf ? `
               <span class="small text-muted fst-italic">This is you</span>
             ` : `

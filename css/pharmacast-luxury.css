@@ -745,6 +745,41 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* ─── Dense admin tables ───
+   The admin "All Registered Platform Accounts" table carries 8 columns, the
+   last of which holds three action buttons. At the default 18px cell padding
+   that pushed the row well past the available width, and because the buttons
+   were in a flex-wrap container the Account Controls column absorbed the
+   squeeze - the three buttons collapsed into a cramped stack that was hard to
+   read and hard to hit. These trim the padding so the row fits, and keep the
+   controls on a single line. */
+.table-luxury.table-compact thead th,
+.table-luxury.table-compact tbody td {
+  padding: 11px 12px;
+  font-size: 0.9rem;
+}
+
+.table-luxury.table-compact thead th {
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+
+/* One row of buttons, never a wrapped stack. The parent .table-responsive
+   supplies a horizontal scrollbar on genuinely narrow screens, which is far
+   easier to use than buttons crushed into a 90px column. */
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.table-actions .btn {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
 /* ─── Chart Container & Background Shading Guide ─── */
 .chart-card-container {
   background: #ffffff;
