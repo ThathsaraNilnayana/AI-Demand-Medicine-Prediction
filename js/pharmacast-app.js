@@ -405,6 +405,47 @@
     }
   }
 
+  /**
+   * Escapes text before it goes into an innerHTML string. Account fields are
+   * user-supplied (pharmacy_name in particular has no server-side character
+   * restrictions), and they are rendered straight into the admin tables - so
+   * without this a registrant could put markup in a field and have it execute
+   * in an administrator's browser.
+   */
+  function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Formats a users.created_at value as a plain date.
+   *
+   * This can't just be `String(v).split(' ')[0]` (what the approvals table
+   * used to do). SQLite hands back "2026-08-11 09:42:51", which that handles,
+   * but Postgres returns a real timestamp that serialises to ISO-8601
+   * ("2026-08-11T09:42:51.985Z") - no space to split on, so the admin was
+   * shown the entire raw timestamp. Parsing properly covers both.
+   */
+  function formatUserDate(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    return String(value).split(' ')[0] || '—';
+  }
+
+  /** Renders a possibly-empty account field as a muted dash rather than a gap. */
+  function orDash(value) {
+    const s = String(value === null || value === undefined ? '' : value).trim();
+    return s ? escapeHtml(s) : '<span class="text-muted">—</span>';
+  }
+
   function formatMonthLabel(yyyyMm) {
     const [y, m] = String(yyyyMm).slice(0, 7).split('-').map(Number);
     if (!y || !m) return String(yyyyMm);
@@ -1590,7 +1631,7 @@
     try {
       allUsers = await api.get('/api/users');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Could not load registrations from server: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Could not load registrations from server: ${escapeHtml(err.message)}</td></tr>`;
       return;
     }
 
@@ -1606,11 +1647,14 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong class="text-dark">${r.user_id}</strong></td>
-        <td>${r.full_name || ''}</td>
-        <td>${r.email}</td>
-        <td>${r.phone || ''}</td>
-        <td><code class="text-dark">${r.username}</code> <span class="badge bg-light text-dark border">${r.role}</span></td>
-        <td>${(r.created_at || '').split(' ')[0]}</td>
+        <td>
+          <div class="fw-bold text-dark">${escapeHtml(r.full_name)}</div>
+          <div class="small text-muted"><i class="bi bi-shop me-1"></i>${orDash(r.pharmacy_name)}</div>
+        </td>
+        <td>${escapeHtml(r.email)}</td>
+        <td>${orDash(r.phone)}</td>
+        <td><code class="text-dark">${escapeHtml(r.username)}</code> <span class="badge bg-light text-dark border">${escapeHtml(r.role)}</span></td>
+        <td>${formatUserDate(r.created_at)}</td>
         <td>
           <div class="d-flex gap-2">
             <button class="btn btn-sm btn-luxury-primary py-1 px-3" onclick="window.PharmaCastApp.approveRequest(${r.user_id})">
@@ -1688,11 +1732,16 @@
     try {
       users = await api.get('/api/users');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Could not load accounts from server: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Could not load accounts from server: ${escapeHtml(err.message)}</td></tr>`;
       return;
     }
 
     tbody.innerHTML = '';
+
+    if (users.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">No accounts registered yet.</td></tr>`;
+      return;
+    }
 
     users.forEach(u => {
       const isSelf = currentUser && String(currentUser.id) === String(u.user_id);
@@ -1713,12 +1762,17 @@
       tr.innerHTML = `
         <td><strong class="text-dark">${u.user_id}</strong></td>
         <td>
-          <div class="fw-bold text-dark">${u.full_name || ''} ${isSelf ? '<span class="badge bg-light text-muted border ms-1">You</span>' : ''}</div>
-          <div class="small text-muted">${u.email || ''}</div>
+          <div class="fw-bold text-dark">${escapeHtml(u.full_name)} ${isSelf ? '<span class="badge bg-light text-muted border ms-1">You</span>' : ''}</div>
+          <div class="small text-muted">${escapeHtml(u.email)}</div>
         </td>
-        <td><code class="text-dark fs-6">${u.username}</code></td>
+        <td>
+          <div class="text-dark"><i class="bi bi-telephone text-muted me-1"></i>${orDash(u.phone)}</div>
+          <div class="small text-muted"><i class="bi bi-shop me-1"></i>${orDash(u.pharmacy_name)}</div>
+        </td>
+        <td><code class="text-dark fs-6">${escapeHtml(u.username)}</code></td>
         <td>${roleBadge}</td>
         <td>${statusBadge}</td>
+        <td class="small">${formatUserDate(u.created_at)}</td>
         <td>
           <div class="d-flex flex-wrap gap-1">
             ${isSelf ? `
