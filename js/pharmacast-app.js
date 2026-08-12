@@ -3945,12 +3945,42 @@
     document.body.style.paddingTop = `${banner.offsetHeight || 44}px`;
   }
 
+  /**
+   * Shows/hides the "SW Monsoon Season: High Dengue & Flu Risk" pill based on
+   * today's actual date, instead of the hardcoded text it used to be (it
+   * previously showed year-round, which is only true for part of the year).
+   *
+   * Sri Lanka's South-West monsoon runs May-September, and health authorities
+   * (Sri Lanka Ministry of Health, National Dengue Control Unit) have
+   * documented a direct link between the monsoon rains/flooding and rising
+   * dengue cases during this window. Outside May-September the banner is
+   * hidden entirely rather than shown with stale/inaccurate content - there's
+   * no verified claim to make about dengue/flu risk the rest of the year, so
+   * saying nothing is more honest than saying something wrong.
+   */
+  function updateMonsoonBanner() {
+    const el = document.getElementById('monsoon-season-banner');
+    const textEl = document.getElementById('monsoon-season-banner-text');
+    if (!el || !textEl) return;
+
+    const month = new Date().getMonth() + 1; // 1 (Jan) - 12 (Dec)
+    const inSWMonsoon = month >= 5 && month <= 9; // May - September
+
+    if (inSWMonsoon) {
+      textEl.textContent = 'SW Monsoon Season: High Dengue & Flu Risk';
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     initAmbientParticles();
     initCursorGlowAura();
     initClickRippleEffect();
     bindSearchHandlers();
     updateNavbarState();
+    updateMonsoonBanner();
     initIOSNavbar();
     warnIfBackendUnreachable();
 

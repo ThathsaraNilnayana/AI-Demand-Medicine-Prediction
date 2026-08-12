@@ -401,8 +401,11 @@
             </p>
           </div>
           <div>
-            <span class="badge bg-white text-dark px-3 py-2 fw-bold monsoon-alert-banner badge-shimmer" style="font-size:0.85rem; border-radius:99px;">
-              <span class="live-pulse-dot pulse-amber"></span><i class="bi bi-cloud-rain-heavy-fill text-primary me-1"></i> SW Monsoon Season: High Dengue &amp; Flu Risk
+            <!-- Content is set by updateMonsoonBanner() (js/pharmacast-app.js) based on
+                 today's date, not hardcoded - see that function for why. Starts hidden
+                 so there's no flash of an inaccurate message before JS runs once. -->
+            <span id="monsoon-season-banner" class="badge bg-white text-dark px-3 py-2 fw-bold monsoon-alert-banner badge-shimmer" style="font-size:0.85rem; border-radius:99px; display:none;">
+              <span class="live-pulse-dot pulse-amber"></span><i class="bi bi-cloud-rain-heavy-fill text-primary me-1"></i> <span id="monsoon-season-banner-text"></span>
             </span>
           </div>
         </div>
