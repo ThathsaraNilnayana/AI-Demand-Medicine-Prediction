@@ -255,6 +255,73 @@ class TestConfidence:
         assert 'accuracy' not in out
 
 
+class TestSeasonalPreservation:
+    """
+    Regression guard for the flat-line bug: a highly seasonal 12-23 month
+    series (Tier 2 - the tier that never gets a classical seasonal ARIMA
+    order) must not come out of generate_prediction() as a near-constant
+    line. Before this fix, Tier 2 had zero seasonal terms and the shrinkage
+    blend toward a flat `robust_anchor()` could erase what little shape
+    survived, so a swing of hundreds of units month-to-month could collapse
+    to a forecast that barely moves.
+    """
+
+    def _seasonal_series(self, n_months, amplitude=250, base=350):
+        # Sharp single-peak annual cycle (e.g. a monsoon-driven medicine):
+        # months 5-9 (May-Sep) run high, the rest run low - closer to the
+        # user-reported chart than a smooth sine.
+        vals = []
+        for i in range(n_months):
+            month_of_year = (i % 12) + 1
+            high_season = 5 <= month_of_year <= 9
+            vals.append(base + (amplitude if high_season else -amplitude * 0.4))
+        return vals
+
+    def test_tier2_forecast_is_not_flat(self):
+        vals = self._seasonal_series(18)
+        out = predict.generate_prediction(series_records('2024-01', vals), horizon=12)
+        assert out['status'] == 'ok'
+        preds = [f['predicted_demand'] for f in out['forecast']]
+        spread = max(preds) - min(preds)
+        assert spread > 80, (
+            f'a strongly seasonal Tier 2 series should not forecast near-flat, '
+            f'got spread {spread} across {preds}'
+        )
+
+    def test_tier2_high_season_months_forecast_higher(self):
+        vals = self._seasonal_series(20)
+        out = predict.generate_prediction(series_records('2024-01', vals), horizon=12)
+        by_month = {f['month'][5:7]: f['predicted_demand'] for f in out['forecast']}
+        high_season = [v for m, v in by_month.items() if m in ('05', '06', '07', '08', '09')]
+        low_season = [v for m, v in by_month.items() if m not in ('05', '06', '07', '08', '09')]
+        if high_season and low_season:
+            assert np.mean(high_season) > np.mean(low_season), (
+                'forecast should track which calendar months actually run high'
+            )
+
+    def test_seasonal_index_shrinks_on_short_history(self):
+        # Only one May and one June observed - the index for those months
+        # should be pulled partway toward 1.0, not take the raw ratio at
+        # full strength.
+        vals = [100] * 4 + [500, 500] + [100] * 6  # one high pair mid-series
+        s, _ = predict.build_series(series_records('2025-01', vals))
+        index = predict._seasonal_index(s)
+        raw_ratio = 500.0 / np.mean(vals)
+        assert 1.0 < index[5] < raw_ratio, 'single-year evidence must be shrunk, not taken at face value'
+
+    def test_seasonal_index_flat_series_is_neutral(self):
+        s, _ = predict.build_series(series_records('2025-01', [200] * 14))
+        index = predict._seasonal_index(s)
+        assert all(abs(v - 1.0) < 1e-9 for v in index.values())
+
+    def test_seasonal_anchor_matches_flat_level_when_no_index(self):
+        s, _ = predict.build_series(series_records('2025-01', [0] * 5 + [80] * 3))
+        periods = [s.index[-1] + i for i in range(1, 4)]
+        anchor = predict.seasonal_anchor(s, periods)
+        assert len(anchor) == 3
+        assert all(a >= 0 for a in anchor)
+
+
 class TestRollingOriginBacktest:
     def test_returns_none_when_too_short(self):
         s, _ = predict.build_series(series_records('2025-01', [10] * 6))

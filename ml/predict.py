@@ -52,6 +52,27 @@ numbers, all fixed here:
    labelled SARIMA was really plain ARIMA(1,1,1). Order is now chosen by
    AICc over a small candidate grid, and seasonality is enabled when the
    series is long enough to support it.
+
+4. THE SHRINKAGE BLEND COULD FLATTEN A GENUINELY SEASONAL FORECAST TO A
+   STRAIGHT LINE.
+   Fix #3 only enabled classical seasonal ARIMA orders at n >= 24 (a
+   seasonal difference needs >= 2 full cycles to identify), so a medicine
+   with exactly 12-23 months of clearly seasonal history - e.g. a monsoon-
+   driven antihistamine - still got a Tier 2 fit with ZERO seasonal terms.
+   That non-seasonal tier forecast was then blended toward `robust_anchor()`,
+   a single flat scalar with no calendar awareness at all (by design - it
+   exists for intermittent, sporadic-sale medicines, see its docstring). For
+   a volatile-but-seasonal series the backtest often favours the anchor, so
+   up to 85% of the final forecast could be that flat number, and the
+   remaining tier share had nothing seasonal to contribute either: the result
+   was a forecast line with almost no monthly variation regardless of how
+   seasonal the actual demand was. Two changes fix this: `_fit_tier2` now
+   adds Fourier seasonal regressors (the same technique Tier 1 already uses)
+   whenever a classical seasonal order isn't identifiable, so the tier
+   forecast itself carries a seasonal shape starting at 12 months; and the
+   anchor blended in is now `seasonal_anchor()`, which scales the flat
+   Croston level by a per-calendar-month index (shrunk toward 1.0 on short
+   histories) instead of repeating one number for every month.
 """
 import sys
 import json
@@ -209,9 +230,15 @@ def _fit_tier2(series, horizon, use_stl=False):
     Tier 2/3: SARIMA with genuine auto-order selection.
 
     Candidate (p,d,q)[+seasonal] orders are scored by AICc and the best is
-    refitted. Seasonality is enabled only with >= 24 months (two full cycles);
-    below that a seasonal term cannot be identified and asking for one is how
-    the original code ended up silently falling back.
+    refitted. A classical seasonal ARIMA order needs >= 24 months (two full
+    cycles) to identify, so below that `seasonal_orders` only offers
+    (0,0,0,0) - but that does not mean a 12-23 month series has no
+    seasonality worth forecasting. Below 24 months (and whenever STL hasn't
+    already separated out a seasonal component), Fourier terms are added as
+    exogenous regressors - the same "regression with ARIMA errors" technique
+    Tier 1 uses - so the tier's own forecast carries a seasonal shape instead
+    of relying entirely on the shrinkage anchor for it (see IMPLEMENTATION
+    NOTE 4 at the top of this file).
     """
     from statsmodels.tsa.statespace.sarimax import SARIMAX
 
@@ -229,18 +256,33 @@ def _fit_tier2(series, horizon, use_stl=False):
         y = y - seasonal_component
         model_type = 'SARIMA+STL'
 
+    # STL already extracted the seasonal shape into `seasonal_component`
+    # (re-attached below), so adding Fourier regressors on top of that would
+    # double-count it. Everywhere else - in particular the 12-23 month tier,
+    # which never gets a classical seasonal order - Fourier regressors are
+    # how this tier sees seasonality at all.
+    exog = None
+    exog_future = None
+    if not (use_stl and seasonal_ok):
+        n_harmonics = int(np.clip(n // 6, 1, 3))
+        exog_candidate = _seasonal_features(series.index, n_harmonics)
+        if exog_candidate.shape[1] > 0:
+            future_periods = [series.index[-1] + i for i in range(1, horizon + 1)]
+            exog = exog_candidate
+            exog_future = _seasonal_features(future_periods, n_harmonics)
+
     candidates = [(1, 1, 1), (0, 1, 1), (1, 1, 0), (1, 0, 0), (0, 1, 0), (2, 1, 1)]
     seasonal_orders = [(1, 1, 1, 12), (0, 1, 1, 12), (0, 0, 0, 0)] if seasonal_ok else [(0, 0, 0, 0)]
 
     best = None
     for order in candidates:
         for s_order in seasonal_orders:
-            n_params = sum(order) + sum(s_order[:3])
+            n_params = sum(order) + sum(s_order[:3]) + (exog.shape[1] if exog is not None else 0)
             if n_params >= n - 1:
                 continue
             try:
                 fit = SARIMAX(
-                    y, order=order, seasonal_order=s_order,
+                    y, exog=exog, order=order, seasonal_order=s_order,
                     enforce_stationarity=False, enforce_invertibility=False,
                 ).fit(disp=False)
                 score = _aicc(fit, n, n_params)
@@ -259,7 +301,10 @@ def _fit_tier2(series, horizon, use_stl=False):
         model_type += ' (fallback)'
     else:
         try:
-            preds = np.asarray(best[1].get_forecast(steps=horizon).predicted_mean, dtype=float)
+            preds = np.asarray(
+                best[1].get_forecast(steps=horizon, exog=exog_future).predicted_mean,
+                dtype=float,
+            )
             if not np.all(np.isfinite(preds)):
                 raise ValueError('non-finite forecast')
         except Exception:
@@ -305,6 +350,55 @@ def robust_anchor(series):
     return float(max(rate, 0.0))
 
 
+def _seasonal_index(series, min_years_for_full_weight=2):
+    """
+    Per-calendar-month multiplier for `robust_anchor()`'s flat level.
+
+    `robust_anchor()` deliberately ignores calendar position - it exists to
+    answer "how much sells and how often" for genuinely intermittent,
+    sporadic-sale medicines (see its docstring), not "which months run
+    high". That is the right question for sporadic demand, but wrong for a
+    medicine with a real annual pattern (e.g. monsoon-driven antihistamine
+    demand): blending the tier forecast toward a perfectly flat anchor erases
+    that pattern even when the anchor mostly wins the backtest.
+
+    Returns {month_of_year: multiplier}. Safe on short series by
+    construction: with only one observed year for a calendar month the ratio
+    is shrunk halfway toward 1.0 (no adjustment), and with zero observations
+    it is exactly 1.0 - a single data point is never enough to declare a
+    month runs 3x an average one.
+    """
+    y = series.values.astype(float)
+    if len(y) == 0:
+        return {}
+    overall_mean = float(np.mean(y))
+    if overall_mean <= 0:
+        return {}
+
+    months = np.array([p.month for p in series.index])
+    index = {}
+    for m in range(1, 13):
+        vals = y[months == m]
+        if len(vals) == 0:
+            index[m] = 1.0
+            continue
+        raw_ratio = float(np.mean(vals)) / overall_mean
+        trust = min(1.0, len(vals) / float(min_years_for_full_weight))
+        index[m] = 1.0 + (raw_ratio - 1.0) * trust
+    return index
+
+
+def seasonal_anchor(series, periods):
+    """
+    `robust_anchor()`'s flat level, scaled per target month by
+    `_seasonal_index()`. Falls back to the flat level itself wherever the
+    index has nothing to say - see `_seasonal_index` for the shrinkage rule.
+    """
+    level = robust_anchor(series)
+    index = _seasonal_index(series)
+    return np.array([level * index.get(p.month, 1.0) for p in periods], dtype=float)
+
+
 def _raw_tier_forecast(series, horizon):
     """The tier model mandated by SDS Table 9, before shrinkage."""
     n = len(series)
@@ -342,7 +436,11 @@ def _shrinkage_weight(series):
         except Exception:
             continue
         model_err.append(_smape(actual, preds[:1]))
-        anchor_err.append(_smape(actual, [robust_anchor(train)]))
+        # Compare against the SAME anchor that _forecast() actually blends in
+        # (seasonal_anchor, not the flat robust_anchor) - otherwise this
+        # weight would be tuned against a different anchor than the one used.
+        held_out_period = series.index[cutoff]
+        anchor_err.append(_smape(actual, seasonal_anchor(train, [held_out_period])))
 
     if not model_err:
         # Nothing measurable: lean on the anchor, which is the safer default
@@ -371,7 +469,8 @@ def _forecast(series, horizon, weight=None):
     preds, model_type = _raw_tier_forecast(series, horizon)
     if weight is None:
         weight = _shrinkage_weight(series)
-    anchor = robust_anchor(series)
+    future_periods = [series.index[-1] + i for i in range(1, horizon + 1)]
+    anchor = seasonal_anchor(series, future_periods)
     blended = weight * np.asarray(preds, dtype=float) + (1.0 - weight) * anchor
     return np.clip(blended, 0, None), model_type
 
