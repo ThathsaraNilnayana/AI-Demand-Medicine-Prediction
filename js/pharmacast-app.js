@@ -3033,7 +3033,7 @@
     if (pageRows.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="6" class="text-center text-muted py-4">
+          <td colspan="5" class="text-center text-muted py-4">
             <i class="bi bi-graph-up-arrow me-2"></i>
             ${q ? `No forecasted medicine found for "${forecastsOverviewSearchTerm.trim()}".` : 'No forecasts yet — generate one from a medicine\'s detail page.'}
           </td>
@@ -3053,7 +3053,6 @@
         <td>${formatMonthLabel(String(r.prediction_month).slice(0, 7))}</td>
         <td>${r.predicted_demand != null ? r.predicted_demand : '-'}</td>
         <td>${confHtml}</td>
-        <td><span class="badge bg-light text-dark border">${r.model_type || '-'}</span></td>
         <td>
           <button class="btn btn-sm btn-luxury-outline py-1 px-2"
                   onclick="window.PharmaCastApp.openMedicineDetail('${r.medicine_id}')"
