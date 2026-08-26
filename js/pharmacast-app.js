@@ -3368,20 +3368,28 @@
 
     showToastNotification(toastMessage, "success");
 
-    if (isUserAdminRole(currentUser)) {
-      showPage('page-admin-dashboard');
-    } else {
-      showPage('page-pharmacist-dashboard');
-    }
+    const isAdmin = isUserAdminRole(currentUser);
+    showPage(isAdmin ? 'page-admin-dashboard' : 'page-pharmacist-dashboard');
 
-    await syncMedicinesFromServer();
-    if (isUserAdminRole(currentUser)) {
-      renderAdminDashboard();
-      if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
-      if (typeof renderPendingApprovalsTable === 'function') renderPendingApprovalsTable();
-    } else {
-      renderPharmacistDashboard();
-    }
+    // Paint the dashboard immediately from whatever's already cached in
+    // localStorage (synchronous, effectively instant) instead of making
+    // every login wait on a full GET /api/medicines round trip (~3,000 rows)
+    // before anything appears. syncMedicinesFromServer() still runs right
+    // after, in the background, and re-renders once the authoritative data
+    // is back - so the dashboard is interactive immediately and simply
+    // refreshes a moment later instead of staying blank until the fetch
+    // completes.
+    const renderDashboard = () => {
+      if (isAdmin) {
+        renderAdminDashboard();
+        if (typeof renderManageMedicinesTable === 'function') renderManageMedicinesTable();
+        if (typeof renderPendingApprovalsTable === 'function') renderPendingApprovalsTable();
+      } else {
+        renderPharmacistDashboard();
+      }
+    };
+    renderDashboard();
+    syncMedicinesFromServer().then(renderDashboard);
   }
 
   /* ─── Forced password change (after an admin "Reset Pass") ───
@@ -3584,12 +3592,18 @@
 
   async function handleLogout() {
     // Destroy the session server-side too (deletes the sessions row), not just
-    // the local copy of it - otherwise the token would stay valid until it expired.
-    try {
-      await api.post('/api/logout');
-    } catch (err) {
+    // the local copy of it - otherwise the token would stay valid until it
+    // expired. This used to be `await`ed, so clicking "Logout" sat there
+    // until that network round trip finished before the UI reacted at all.
+    // api.post() reads the current auth token synchronously the moment it's
+    // called (before its first `await fetch(...)`), so firing it here and
+    // clearing local state on the next line - without waiting on it - still
+    // sends the real token; the request just completes in the background
+    // instead of blocking the button. If it fails, the session simply
+    // expires on its own via the existing inactivity timeout.
+    api.post('/api/logout').catch((err) => {
       console.warn('[PharmaCast] Server logout failed (session will still expire on its own):', err.message);
-    }
+    });
 
     setRealAuthToken(null);
     currentUser = null;

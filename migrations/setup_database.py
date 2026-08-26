@@ -111,6 +111,10 @@ CREATE TABLE predictions (
 CREATE INDEX idx_medicines_name_nocase ON medicines(medicine_name COLLATE NOCASE);
 CREATE INDEX idx_predictions_medicine ON predictions(medicine_id);
 CREATE INDEX idx_predictions_month ON predictions(prediction_month);
+-- Speeds up /api/login and /api/change-password, which look users up via
+-- LOWER(username)/LOWER(email) - see the matching comment in db.sqlite.js.
+CREATE INDEX idx_users_username_lower ON users(LOWER(username));
+CREATE INDEX idx_users_email_lower ON users(LOWER(email));
 ''')
 
 

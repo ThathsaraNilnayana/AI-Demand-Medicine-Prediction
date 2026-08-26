@@ -212,6 +212,14 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     rejection_reason TEXT
 );
+-- /api/login and /api/change-password look users up with
+-- WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2). The
+-- UNIQUE constraints above already give username/email plain btree indexes,
+-- but Postgres can't use those once the column is wrapped in LOWER() - it
+-- needs an index on that exact expression. Without this every login is a
+-- sequential scan of the whole users table.
+CREATE INDEX IF NOT EXISTS idx_users_username_lower ON users(LOWER(username));
+CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email));
 
 CREATE TABLE IF NOT EXISTS sessions (
     session_token TEXT PRIMARY KEY,

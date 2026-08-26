@@ -125,11 +125,16 @@ router.post('/login',
 
             // The credential is valid, so clear the failed-attempt counter
             // either way - this is a successful authentication even if it
-            // isn't (yet) a successful login.
-            await db.run(
-                'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = ?',
-                [user.user_id]
-            );
+            // isn't (yet) a successful login. Skip the write entirely for the
+            // (overwhelmingly common) case where there was nothing to clear -
+            // most logins never fail first, so this saves a DB round trip on
+            // most logins instead of writing the same 0/NULL back every time.
+            if (user.failed_login_attempts || user.locked_until) {
+                await db.run(
+                    'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = ?',
+                    [user.user_id]
+                );
+            }
 
             // An admin reset this account to the shared default password. That
             // password is known to whoever issued the reset and is identical
@@ -220,7 +225,7 @@ router.post('/change-password',
                     lockedUntil = new Date(Date.now() + config.loginLockoutMinutes * 60 * 1000).toISOString();
                 }
                 await db.run(
-                    'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE user_id = ?',mm
+                    'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE user_id = ?',
                     [lockedUntil ? 0 : attempts, lockedUntil, user.user_id]
                 );
                 if (lockedUntil) {

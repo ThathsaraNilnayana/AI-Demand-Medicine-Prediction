@@ -56,11 +56,22 @@ db.run('PRAGMA mmap_size = 134217728'); // 128MB
 //     table scan to an index search.
 //   - predictions(prediction_month): GET /api/predictions filters
 //     `WHERE prediction_month >= DATE('now')` across the whole table.
+//   - users(LOWER(username)) / users(LOWER(email)): /api/login and
+//     /api/change-password look the user up with `WHERE LOWER(username) =
+//     LOWER(?) OR LOWER(email) = LOWER(?)`. The UNIQUE constraints on
+//     username/email already create ordinary indexes, but those can't be
+//     used once the column is wrapped in LOWER() - confirmed via EXPLAIN
+//     QUERY PLAN, which showed a full table SCAN on users for every single
+//     login/logout-triggering login attempt. An index on the LOWER(column)
+//     expression itself lets SQLite use a SEARCH instead, which is what
+//     keeps login fast as the users table grows past a handful of test rows.
 const PERF_INDEXES = [
     `CREATE INDEX IF NOT EXISTS idx_medicines_name_nocase ON medicines(medicine_name COLLATE NOCASE)`,
     `CREATE INDEX IF NOT EXISTS idx_predictions_medicine ON predictions(medicine_id)`,
     `CREATE INDEX IF NOT EXISTS idx_predictions_month ON predictions(prediction_month)`,
     `CREATE INDEX IF NOT EXISTS idx_sales_batch ON sales_data(upload_batch)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_username_lower ON users(LOWER(username))`,
+    `CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email))`,
 ];
 for (const sql of PERF_INDEXES) {
     db.run(sql, (err) => {
