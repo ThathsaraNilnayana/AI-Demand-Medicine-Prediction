@@ -44,6 +44,12 @@ CREATE TABLE users (
     failed_login_attempts INTEGER DEFAULT 0,
     locked_until TIMESTAMP,
     must_change_password INTEGER DEFAULT 0,
+    -- Last known GPS fix for the dashboard's "My Location" widget (see
+    -- routes/users.routes.js GET/PUT /api/users/location). NULL until the
+    -- user opts in and shares their device location at least once.
+    latitude REAL,
+    longitude REAL,
+    location_updated_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

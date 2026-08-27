@@ -115,7 +115,14 @@ const MIGRATIONS = [
     // default. While set, login verifies the password but issues no session -
     // the account must go through /api/change-password first, so a known
     // default password can never reach an actual logged-in page.
-    ['users', 'must_change_password', 'INTEGER DEFAULT 0']
+    ['users', 'must_change_password', 'INTEGER DEFAULT 0'],
+    // Last known GPS fix for the dashboard's "My Location" widget (see
+    // routes/users.routes.js GET/PUT /api/users/location). NULL until the
+    // user opts in and shares their device location at least once - never
+    // populated automatically.
+    ['users', 'latitude', 'REAL'],
+    ['users', 'longitude', 'REAL'],
+    ['users', 'location_updated_at', 'TEXT']
 ];
 
 for (const [table, column, type] of MIGRATIONS) {

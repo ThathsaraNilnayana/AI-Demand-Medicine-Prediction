@@ -3461,6 +3461,7 @@
 
     const isAdmin = isUserAdminRole(currentUser);
     showPage(isAdmin ? 'page-admin-dashboard' : 'page-pharmacist-dashboard');
+    initMyLocationWidget();
 
     // Paint the dashboard immediately from whatever's already cached in
     // localStorage (synchronous, effectively instant) instead of making
@@ -3684,6 +3685,12 @@
   }
 
   async function handleLogout() {
+    // Stop watching GPS position first: otherwise a stray watchPosition
+    // callback firing after the token is cleared below tries to PUT
+    // /api/users/location with no auth, which just produces a confusing
+    // "session expired" toast on top of the logout that already happened.
+    stopMyLocationSharing();
+
     // Destroy the session server-side too (deletes the sessions row), not just
     // the local copy of it - otherwise the token would stay valid until it
     // expired. This used to be `await`ed, so clicking "Logout" sat there
@@ -3897,6 +3904,221 @@
     }, 4500);
   }
 
+  // ─── 12b. LIVE LOCATION TRACKING ("My Location" dashboard widget) ───
+  // Lets the signed-in user share their device's live GPS position from the
+  // dashboard: a small embedded map plus coordinates that update on their
+  // own as the device moves, via the browser's Geolocation API
+  // (watchPosition) - no manual refresh, no page reload. The last fix is
+  // also persisted server-side (throttled, not on every tick) via PUT
+  // /api/users/location, so "the website should update" holds in both
+  // senses: the on-screen card updates live, and the stored value the
+  // server/admin would read back is kept current too.
+  //
+  // Nothing here runs until the user clicks "Enable Location" - most
+  // browsers require a user gesture for a geolocation prompt anyway, and
+  // silently requesting GPS the moment someone logs in would be invasive.
+  let myLocationWatchId = null;
+  let myLocationMap = null;
+  let myLocationMarker = null;
+  let myLocationLastSentAt = 0;
+  let myLocationLastSentCoords = null; // [lat, lng] of the last fix actually saved to the server
+
+  const MY_LOCATION_SEND_INTERVAL_MS = 30 * 1000; // never persist more than once per 30s...
+  const MY_LOCATION_SEND_MIN_MOVE_M = 25;          // ...unless the device moved at least this far
+
+  /** Great-circle distance in meters - decides whether a new GPS fix moved
+   *  far enough to be worth a fresh server write. */
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = (d) => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
+  /** "3 minutes ago" style label for the "Updated ..." text. */
+  function formatRelativeTime(iso) {
+    if (!iso) return 'just now';
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins === 1) return '1 minute ago';
+    if (mins < 60) return `${mins} minutes ago`;
+    const hrs = Math.round(mins / 60);
+    return hrs === 1 ? '1 hour ago' : `${hrs} hours ago`;
+  }
+
+  // The pharmacist and admin dashboards are separate HTML documents (see
+  // the "crossDocumentFileFor()" note elsewhere in this file), each with at
+  // most one #my-location-* card - so these lookups always resolve to
+  // "the card on whichever dashboard is currently loaded", never a clash.
+  function getMyLocationEls() {
+    return {
+      status: document.getElementById('my-location-status'),
+      coordsWrap: document.getElementById('my-location-coords'),
+      lat: document.getElementById('my-location-lat'),
+      lng: document.getElementById('my-location-lng'),
+      updated: document.getElementById('my-location-updated'),
+      mapEl: document.getElementById('my-location-map'),
+      toggleBtn: document.getElementById('my-location-toggle-btn')
+    };
+  }
+
+  function setMyLocationStatus(msg) {
+    const { status } = getMyLocationEls();
+    if (status) status.textContent = msg;
+  }
+
+  /**
+   * Called once per page load (and once right after login) for whichever
+   * dashboard is on screen. Restores the last SAVED position from the
+   * server so the card isn't empty on a fresh visit - this does not request
+   * a new GPS fix and does not start live tracking; that only begins once
+   * the user clicks "Enable Location".
+   */
+  async function initMyLocationWidget() {
+    const { toggleBtn } = getMyLocationEls();
+    if (!toggleBtn) return; // this document has no location card (shouldn't happen, but don't throw if markup changes)
+
+    if (!('geolocation' in navigator)) {
+      setMyLocationStatus('Your browser does not support location sharing.');
+      toggleBtn.disabled = true;
+      return;
+    }
+
+    try {
+      const saved = await api.get('/api/users/location');
+      if (saved && saved.latitude != null && saved.longitude != null) {
+        renderMyLocation(saved.latitude, saved.longitude, saved.location_updated_at, false);
+        setMyLocationStatus('Showing your last known location. Click Enable to share your current position live.');
+      }
+    } catch (e) {
+      // Not logged in yet, or nothing saved so far - the card just starts empty, which is fine.
+    }
+  }
+
+  function toggleMyLocationSharing() {
+    if (myLocationWatchId !== null) stopMyLocationSharing();
+    else startMyLocationSharing();
+  }
+
+  function startMyLocationSharing() {
+    const { toggleBtn } = getMyLocationEls();
+    if (!('geolocation' in navigator)) return;
+
+    setMyLocationStatus('Requesting location permission…');
+    myLocationWatchId = navigator.geolocation.watchPosition(
+      onMyLocationUpdate,
+      onMyLocationError,
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+    );
+
+    if (toggleBtn) {
+      toggleBtn.innerHTML = '<i class="bi bi-geo-alt-fill me-1"></i> Stop Sharing';
+      toggleBtn.classList.remove('btn-luxury-primary');
+      toggleBtn.classList.add('btn-luxury-outline');
+    }
+  }
+
+  function stopMyLocationSharing() {
+    if (myLocationWatchId !== null) {
+      navigator.geolocation.clearWatch(myLocationWatchId);
+      myLocationWatchId = null;
+    }
+    const { toggleBtn } = getMyLocationEls();
+    if (toggleBtn) {
+      toggleBtn.innerHTML = '<i class="bi bi-geo-alt me-1"></i> Enable Location';
+      toggleBtn.classList.remove('btn-luxury-outline');
+      toggleBtn.classList.add('btn-luxury-primary');
+    }
+    setMyLocationStatus('Location sharing is off.');
+  }
+
+  function onMyLocationError(err) {
+    stopMyLocationSharing();
+    const messages = {
+      1: 'Location permission was denied. Enable it in your browser/site settings to use this.',
+      2: 'Your position is currently unavailable.',
+      3: 'Location request timed out.'
+    };
+    setMyLocationStatus(messages[err.code] || 'Could not get your location.');
+  }
+
+  function onMyLocationUpdate(pos) {
+    const { latitude, longitude, accuracy } = pos.coords;
+    renderMyLocation(latitude, longitude, new Date().toISOString(), true, accuracy);
+    maybePersistMyLocation(latitude, longitude);
+  }
+
+  /**
+   * Updates the on-page coordinates + map immediately - this is the "the
+   * website should update when the location changes" behaviour, and it
+   * runs on every GPS fix regardless of whether that particular fix also
+   * gets persisted to the server (see maybePersistMyLocation).
+   */
+  function renderMyLocation(lat, lng, whenIso, isLive, accuracy) {
+    const { status, coordsWrap, lat: latEl, lng: lngEl, updated } = getMyLocationEls();
+    if (coordsWrap) coordsWrap.style.display = '';
+    if (latEl) latEl.textContent = lat.toFixed(5);
+    if (lngEl) lngEl.textContent = lng.toFixed(5);
+    if (updated) updated.textContent = formatRelativeTime(whenIso);
+    if (isLive && status) {
+      status.textContent = `Sharing live location${accuracy ? ` (±${Math.round(accuracy)}m)` : ''}.`;
+    }
+    renderMyLocationMap(lat, lng);
+  }
+
+  function renderMyLocationMap(lat, lng) {
+    const { mapEl } = getMyLocationEls();
+    // Leaflet (js/... loaded from CDN, same pattern as Chart.js) may not be
+    // available - e.g. offline, or the CDN is blocked. Degrade to
+    // text-only coordinates rather than throwing.
+    if (!mapEl || typeof L === 'undefined') return;
+    mapEl.style.display = '';
+
+    if (!myLocationMap) {
+      myLocationMap = L.map(mapEl, { zoomControl: false }).setView([lat, lng], 15);
+      // OpenStreetMap's standard tile server - free, no API key, but per
+      // their tile usage policy this stays as light, occasional use (one
+      // signed-in user's own map, not a bulk/production tile consumer).
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(myLocationMap);
+      myLocationMarker = L.marker([lat, lng]).addTo(myLocationMap);
+    } else {
+      myLocationMap.setView([lat, lng]);
+      myLocationMarker.setLatLng([lat, lng]);
+    }
+    // Leaflet measures its container at creation time; if the card was
+    // display:none then (e.g. rendered on a dashboard that wasn't the
+    // active page yet), tiles come out zero-size. Recompute now that it's
+    // visible.
+    setTimeout(() => { if (myLocationMap) myLocationMap.invalidateSize(); }, 0);
+  }
+
+  /**
+   * Throttled persistence: at most once every MY_LOCATION_SEND_INTERVAL_MS,
+   * unless the device moved at least MY_LOCATION_SEND_MIN_MOVE_M meters
+   * since the last successful save - otherwise a stationary tab would hit
+   * the server on every watchPosition tick (which can fire every few
+   * seconds), for no benefit.
+   */
+  function maybePersistMyLocation(lat, lng) {
+    const now = Date.now();
+    const movedEnough = !myLocationLastSentCoords ||
+      haversineMeters(lat, lng, myLocationLastSentCoords[0], myLocationLastSentCoords[1]) >= MY_LOCATION_SEND_MIN_MOVE_M;
+    const dueForRefresh = (now - myLocationLastSentAt) >= MY_LOCATION_SEND_INTERVAL_MS;
+    if (!movedEnough && !dueForRefresh) return;
+
+    myLocationLastSentAt = now;
+    myLocationLastSentCoords = [lat, lng];
+    api.put('/api/users/location', { latitude: lat, longitude: lng }).catch((err) => {
+      console.warn('[PharmaCast] Could not save location:', err.message);
+    });
+  }
+
   // ─── 13. EXPOSE PUBLIC APPLICATION API ───
   window.PharmaCastApp = {
     showPage,
@@ -3957,7 +4179,8 @@
     trainModelWithDataset,
     trainOnDataset,
     closeAiTrainingModal,
-    finishAiTraining
+    finishAiTraining,
+    toggleMyLocationSharing
   };
 
   /* ─── iOS navbar behaviours ───
@@ -4090,7 +4313,14 @@
     initIOSNavbar();
     warnIfBackendUnreachable();
 
-    if (currentUser) startInactivityTimer();
+    if (currentUser) {
+      startInactivityTimer();
+      // Restores the last-saved location (no fresh GPS prompt) if this
+      // document's dashboard has the "My Location" card - covers a page
+      // refresh or a fresh navigation to admin.html/index.html while
+      // already signed in, not just the moment right after login.
+      initMyLocationWidget();
+    }
 
     // Default route. If we were just handed off from the other document
     // (see crossDocumentFileFor() in showPage()) with a specific page in the

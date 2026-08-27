@@ -469,6 +469,27 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   box-shadow: var(--shadow-md);
 }
 
+/* "My Location" dashboard widget (js/pharmacast-app.js) - the embedded
+   Leaflet map next to the coordinates/status text. Needs an explicit
+   width/height: Leaflet measures its container in pixels at creation time
+   and renders nothing (or blank tiles) without one. */
+.my-location-map {
+  width: 100%;
+  max-width: 280px;
+  height: 180px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+@media (max-width: 767.98px) {
+  .my-location-map {
+    max-width: 100%;
+    height: 200px;
+  }
+}
+
 .stat-card-icon {
   width: 56px;
   height: 56px;

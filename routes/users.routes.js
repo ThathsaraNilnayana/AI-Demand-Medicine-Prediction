@@ -38,6 +38,47 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// ─── Live location sharing ("My Location" dashboard widget) ───
+// Self-service, unlike the rest of this file: any authenticated user reads
+// or writes their OWN last-known GPS position, not someone else's account,
+// so this is intentionally not behind requireRole('admin'). The dashboard
+// widget (js/pharmacast-app.js) calls GET on load to restore the last saved
+// fix without prompting for a fresh one, then PUT (throttled client-side)
+// whenever navigator.geolocation.watchPosition() reports a new position
+// while the user has location sharing turned on.
+router.get('/location', requireAuth, async (req, res, next) => {
+    try {
+        const row = await db.get(
+            'SELECT latitude, longitude, location_updated_at FROM users WHERE user_id = ?',
+            [req.user.id]
+        );
+        res.json(row && row.latitude != null && row.longitude != null
+            ? row
+            : { latitude: null, longitude: null, location_updated_at: null });
+    } catch (err) { next(err); }
+});
+
+router.put('/location',
+    requireAuth,
+    [
+        body('latitude').isFloat({ min: -90, max: 90 }).withMessage('latitude must be between -90 and 90'),
+        body('longitude').isFloat({ min: -180, max: 180 }).withMessage('longitude must be between -180 and 180')
+    ],
+    validate,
+    async (req, res, next) => {
+        try {
+            const latitude = Number(req.body.latitude);
+            const longitude = Number(req.body.longitude);
+            const updatedAt = new Date().toISOString();
+            await db.run(
+                'UPDATE users SET latitude = ?, longitude = ?, location_updated_at = ? WHERE user_id = ?',
+                [latitude, longitude, updatedAt, req.user.id]
+            );
+            res.json({ latitude, longitude, location_updated_at: updatedAt });
+        } catch (err) { next(err); }
+    }
+);
+
 // Approve a pending registration (FR9)
 router.put('/:id/approve', requireAuth, requireRole('admin'), async (req, res, next) => {
     try {

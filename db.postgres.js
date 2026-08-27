@@ -296,6 +296,13 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_pct REAL;
 -- through /api/change-password first. Stored as INTEGER rather than BOOLEAN
 -- so the same 0/1 values round-trip identically through the SQLite driver.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER DEFAULT 0;
+
+-- Last known GPS fix for the dashboard's "My Location" widget (see
+-- routes/users.routes.js GET/PUT /api/users/location). NULL until the user
+-- opts in and shares their device location at least once.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP;
 `;
 
 const ready = pool.query(SCHEMA_SQL)
