@@ -314,6 +314,35 @@
     upload: apiUpload
   };
 
+  // Fires the very first ping at the backend the instant this script runs -
+  // not only once someone reaches the login page or clicks "Sign In". On
+  // Render's free tier a cold instance takes 50s+ to wake up; starting that
+  // clock the moment the page starts loading, instead of only once a form is
+  // submitted, means the server has usually finished booting by the time
+  // someone has read the page and typed their credentials - so the login/
+  // register request they actually submit lands on an already-warm server
+  // most of the time. This is a single best-effort ping (not a retry loop),
+  // so it costs nothing when the backend is already warm; postWithWakeup()
+  // below still covers the case where it wasn't warm in time.
+  if (!servedByRealApi) {
+    fetch(apiUrl('/api/stats'), { cache: 'no-store' }).catch(() => { /* handled by postWithWakeup() on submit */ });
+  }
+
+  // Keeps a Render free-tier instance from spinning back down while someone
+  // is actively on the site. Render puts a free web service to sleep after
+  // ~15 min with no requests, and waking it back up is what makes
+  // login/register feel slow (50s+ cold start) - the ping above only covers
+  // the FIRST visit after a cold start, not a long form-filling session or a
+  // second visitor arriving after the first one's tab has been idle a while.
+  // A cheap, unauthenticated GET every 10 minutes (well under the 15-minute
+  // spin-down window) is enough to keep the instance warm for as long as at
+  // least one tab is open, so the next login/register submit on this or any
+  // other tab lands on an already-awake server instead of triggering a fresh
+  // cold start. Harmless against localhost too - just an extra /api/stats hit.
+  setInterval(() => {
+    fetch(apiUrl('/api/stats'), { cache: 'no-store' }).catch(() => { /* best-effort only */ });
+  }, 10 * 60 * 1000);
+
   /**
    * Render's free instance spins down after inactivity and can take 50s+ to
    * wake back up. A `fetch()` sent while the process is still down/booting
@@ -349,11 +378,39 @@
         log('> Waking up the server (Render free tier can take ~50s+ after inactivity)...', 'text-warning');
         announced = true;
       }
-      await new Promise(r => setTimeout(r, 3000));
+      // Poll every 1.5s instead of 3s so the login/register submit picks up
+      // the instant the server actually answers, rather than sitting idle
+      // for up to ~1.5s extra on average after it's already awake.
+      await new Promise(r => setTimeout(r, 1500));
     }
 
     if (announced && log) log('> Still not responding after 75s - continuing anyway.', 'text-warning');
     return false;
+  }
+
+  /**
+   * Used by login/register/change-password: submits the request, and - only
+   * when the failure is a network-level "can't reach the server at all" (the
+   * signature of a Render free-tier instance that's still asleep or mid-boot,
+   * see apiRequest()'s catch block) - waits for the backend to wake up and
+   * retries once automatically, instead of surfacing a scary "can't reach the
+   * server" error that the person has to notice and manually retry. A real
+   * application error (wrong password, validation failure, duplicate
+   * username, an actual 401/403/500) is a normal rejected promise from
+   * api.post() with a different message, and is rethrown immediately without
+   * any of this - this only ever changes the outcome of a request that would
+   * otherwise have failed outright.
+   */
+  async function postWithWakeup(path, body, onWaking) {
+    try {
+      return await api.post(path, body);
+    } catch (err) {
+      if (!/Cannot reach the PharmaCast server/.test(err.message)) throw err;
+      if (onWaking) onWaking('Server is waking up - this can take up to a minute on Render’s free tier after a period of inactivity. Hang tight…');
+      const awake = await wakeUpBackend(null);
+      if (!awake) throw err;
+      return api.post(path, body);
+    }
   }
 
   /**
@@ -3309,20 +3366,54 @@
   // clearing localStorage and was the root cause of an earlier "admin can't
   // log in" incident, since it could lock an account the server itself
   // considered fine.
+
+  /** Shared by the login/register/force-password-change banners: swaps both
+   *  the message and the Bootstrap alert color, so the same element can show
+   *  a real error (red) or a transient status like "waking up..." (amber)
+   *  without looking like a failure. */
+  function setAuthBanner(el, msg, variant = 'danger') {
+    if (!el) return;
+    if (!msg) { el.style.display = 'none'; return; }
+    el.classList.remove('alert-danger', 'alert-warning');
+    el.classList.add(variant === 'warning' ? 'alert-warning' : 'alert-danger');
+    const icon = variant === 'warning' ? 'bi-hourglass-split' : 'bi-exclamation-triangle-fill';
+    el.innerHTML = `<i class="bi ${icon} me-2"></i> ${msg}`;
+    el.style.display = 'block';
+  }
+
+  /** Disables a submit button and swaps its label while a request is in
+   *  flight - immediate visual feedback (and a guard against duplicate
+   *  submits/double-registrations) instead of a button that looks idle for
+   *  however long the request takes. Returns a function that restores it. */
+  function setButtonBusy(btn, busyLabel) {
+    if (!btn) return () => {};
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${busyLabel}`;
+    return () => { btn.disabled = false; btn.innerHTML = original; };
+  }
+
   async function handleLoginSubmit(e) {
     e.preventDefault();
     const usernameVal = document.getElementById('login-username').value.trim();
     const passwordVal = document.getElementById('login-password').value;
     const errorEl = document.getElementById('login-error-banner');
+    const restoreBtn = setButtonBusy(document.getElementById('login-submit-btn'), 'Signing in…');
 
     if (errorEl) errorEl.style.display = 'none';
 
     let result;
     try {
-      result = await api.post('/api/login', { username: usernameVal, password: passwordVal });
+      result = await postWithWakeup(
+        '/api/login',
+        { username: usernameVal, password: passwordVal },
+        (msg) => setAuthBanner(errorEl, msg, 'warning')
+      );
     } catch (err) {
       showLoginError(err.message || 'Invalid username or password');
       return;
+    } finally {
+      restoreBtn();
     }
 
     // An admin reset this account to the shared temporary password. The server
@@ -3431,11 +3522,7 @@
   }
 
   function showForcePasswordError(msg) {
-    const el = document.getElementById('force-pw-error-banner');
-    if (el) {
-      el.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> ${msg}`;
-      el.style.display = 'block';
-    }
+    setAuthBanner(document.getElementById('force-pw-error-banner'), msg, 'danger');
   }
 
   async function handleForcePasswordChangeSubmit(e) {
@@ -3472,15 +3559,22 @@
     }
 
     let result;
+    const restoreBtn = setButtonBusy(document.getElementById('force-pw-submit-btn'), 'Saving…');
     try {
-      result = await api.post('/api/change-password', {
-        username: pendingPasswordChange.username,
-        current_password: pendingPasswordChange.currentPassword,
-        new_password: newPw
-      });
+      result = await postWithWakeup(
+        '/api/change-password',
+        {
+          username: pendingPasswordChange.username,
+          current_password: pendingPasswordChange.currentPassword,
+          new_password: newPw
+        },
+        (msg) => setAuthBanner(errEl, msg, 'warning')
+      );
     } catch (err) {
       showForcePasswordError(err.message || 'Could not change your password.');
       return;
+    } finally {
+      restoreBtn();
     }
 
     // Wipe the temporary credential and the typed values the moment they're
@@ -3493,11 +3587,7 @@
   }
 
   function showLoginError(msg) {
-    const errorEl = document.getElementById('login-error-banner');
-    if (errorEl) {
-      errorEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> ${msg}`;
-      errorEl.style.display = 'block';
-    }
+    setAuthBanner(document.getElementById('login-error-banner'), msg, 'danger');
   }
 
   async function handleRegisterSubmit(e) {
@@ -3557,18 +3647,25 @@
     // (The backend re-validates everything authoritatively, including
     // duplicate username/email and the 2+ word full-name rule, so its error
     // message is shown directly if it disagrees with the quick checks above.)
+    const restoreBtn = setButtonBusy(document.getElementById('register-submit-btn'), 'Submitting…');
     try {
-      await api.post('/api/register', {
-        full_name: fullNameVal,
-        email: emailVal,
-        phone: contactVal,
-        username: usernameVal,
-        password: passwordVal,
-        role: selectedRole
-      });
+      await postWithWakeup(
+        '/api/register',
+        {
+          full_name: fullNameVal,
+          email: emailVal,
+          phone: contactVal,
+          username: usernameVal,
+          password: passwordVal,
+          role: selectedRole
+        },
+        (msg) => setAuthBanner(errorEl, msg, 'warning')
+      );
     } catch (err) {
       showRegisterError(err.message || 'Registration failed. Please try again.');
       return;
+    } finally {
+      restoreBtn();
     }
 
     // Show luxury modal
@@ -3577,11 +3674,7 @@
   }
 
   function showRegisterError(msg) {
-    const errorEl = document.getElementById('reg-error-banner');
-    if (errorEl) {
-      errorEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> ${msg}`;
-      errorEl.style.display = 'block';
-    }
+    setAuthBanner(document.getElementById('reg-error-banner'), msg, 'danger');
   }
 
   function closeRegistrationSuccessModal() {
