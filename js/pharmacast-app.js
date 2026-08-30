@@ -2565,16 +2565,23 @@
     let succeeded = 0;
     const confidences = [];
 
-    // Bounded-concurrency dispatch, mirroring services/predictionService.js's
-    // regenerateAllPredictions() on the server. Before this change the loop
-    // below awaited one /api/predictions/generate/:id call at a time, so a
-    // full-catalog run only ever kept ONE of the server's pooled ml/predict.py
-    // worker processes busy even though the pool (config.ML_WORKER_COUNT,
-    // default 2) can fit two medicines at once - the client was the
-    // bottleneck, not the ML engine. TRAINING_CONCURRENCY matches that
-    // default so this keeps both pooled workers fed without over-queuing a
-    // free-tier instance; raise it if ML_WORKER_COUNT is raised server-side.
-    const TRAINING_CONCURRENCY = 2;
+    // Dispatch is intentionally sequential (concurrency 1), kept as a
+    // worker-pool-shaped loop (matching services/predictionService.js's
+    // regenerateAllPredictions()) so raising TRAINING_CONCURRENCY later is a
+    // one-line change. It was briefly set to 2 to match the server's pooled
+    // ml/predict.py workers (config.ML_WORKER_COUNT, default 2), but Render's
+    // own metrics for this service show a hard 0.15 vCPU limit (confirmed via
+    // the dashboard's Metrics tab - the process is pinned at that ceiling
+    // under load). That's a fraction of a single core, not multiple cores:
+    // two requests in flight at once don't get more real compute, they just
+    // split the same 0.15-CPU budget, so the concurrency added scheduling
+    // overhead without a genuine speedup on this plan. The persistent-worker
+    // pool itself (reusing an already-imported Python process instead of
+    // paying ~1.6s of import cost per medicine) is a separate, still-valid
+    // win and is unaffected by this. If this project ever moves to a paid
+    // Render plan with real multi-core CPU, raising this back to match
+    // ML_WORKER_COUNT would be worth re-measuring.
+    const TRAINING_CONCURRENCY = 1;
 
     async function trainOne(med) {
       if (aiTrainingCancelled) return;
