@@ -3640,12 +3640,12 @@
       return;
     }
 
-    const roleEl = document.getElementById('reg-role');
-    const selectedRole = (roleEl ? roleEl.value : "Pharmacist").toLowerCase();
-
-    // Per the SRS, admin approval is mandatory for every new account -
-    // including admin signups - so both roles go into the same real pending
-    // queue on the server; there is no instant self-activation anymore.
+    // Public self-registration only ever creates a Pharmacist account -
+    // there is no role selector on this form on purpose (see index.html).
+    // Every new account still goes into the real pending-approval queue on
+    // the server; there is no instant self-activation. An Administrator
+    // account can only be created by an existing admin, from the admin
+    // dashboard's "Create New Platform Account" modal - never from here.
     // (The backend re-validates everything authoritatively, including
     // duplicate username/email and the 2+ word full-name rule, so its error
     // message is shown directly if it disagrees with the quick checks above.)
@@ -3658,8 +3658,7 @@
           email: emailVal,
           phone: contactVal,
           username: usernameVal,
-          password: passwordVal,
-          role: selectedRole
+          password: passwordVal
         },
         (msg) => setAuthBanner(errorEl, msg, 'warning')
       );

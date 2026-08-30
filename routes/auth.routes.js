@@ -28,13 +28,18 @@ router.post('/register',
             .withMessage('Username must be 4-20 characters (letters, numbers, underscore)'),
         body('password').isLength({ min: 8 })
             .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).+$/)
-            .withMessage('Password needs 8+ chars incl. uppercase, lowercase, digit and special character'),
-        body('role').isIn(['pharmacist', 'admin']).withMessage('Invalid role')
+            .withMessage('Password needs 8+ chars incl. uppercase, lowercase, digit and special character')
+        // No `role` field is accepted here on purpose. Public self-registration
+        // must never be able to create an admin account - not even a PENDING
+        // one - so this endpoint doesn't read req.body.role at all below; it
+        // always inserts 'pharmacist', regardless of what a caller sends.
+        // Admin accounts can only be created by an existing admin, via
+        // POST /api/users (routes/users.routes.js, requireRole('admin')).
     ],
     validate,
     async (req, res, next) => {
         try {
-            const { username, email, password, role, full_name, phone, pharmacy_name } = req.body;
+            const { username, email, password, full_name, phone, pharmacy_name } = req.body;
 
             if (password.toLowerCase().includes(username.toLowerCase())) {
                 return res.status(400).json({ error: 'Password must not contain the username' });
@@ -51,8 +56,8 @@ router.post('/register',
             const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
             const result = await db.run(
                 `INSERT INTO users (username, email, password_hash, role, full_name, phone, pharmacy_name, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-                [username, email, passwordHash, role, full_name || null, phone || null, pharmacy_name || null]
+                 VALUES (?, ?, ?, 'pharmacist', ?, ?, ?, 'pending')`,
+                [username, email, passwordHash, full_name || null, phone || null, pharmacy_name || null]
             );
 
             res.json({ id: result.lastID, message: 'Registration successful. Awaiting admin approval.' });

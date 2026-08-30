@@ -239,14 +239,12 @@
                 <div class="form-text small">Alphanumeric (4 to 20 characters, must be unique)</div>
               </div>
 
-              <div class="mb-3">
-                <label class="form-label fw-bold small text-muted text-uppercase">Account Role <span class="text-danger">*</span></label>
-                <select id="reg-role" class="form-select form-select-lg">
-                  <option value="Pharmacist">Pharmacist</option>
-                  <option value="Admin">Administrator</option>
-                </select>
-                <div class="form-text small">Every new account, including Administrator, requires approval before it can log in.</div>
-              </div>
+              <!-- No account-role selector here on purpose: public
+                   self-registration only ever creates a Pharmacist account
+                   (see handleRegisterSubmit() and POST /api/register).
+                   Administrator accounts can only be created by an existing
+                   admin, from the admin dashboard's "Create New Platform
+                   Account" modal. -->
 
               <div class="row g-3 mb-4">
                 <div class="col-md-6">
