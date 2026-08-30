@@ -3689,7 +3689,9 @@
     // callback firing after the token is cleared below tries to PUT
     // /api/users/location with no auth, which just produces a confusing
     // "session expired" toast on top of the logout that already happened.
-    stopMyLocationSharing();
+    // keepAutoResumePreference: true - this is cleanup, not the user asking
+    // to stop sharing, so it must NOT erase "auto-resume on next login".
+    stopMyLocationSharing({ keepAutoResumePreference: true });
 
     // Destroy the session server-side too (deletes the sessions row), not just
     // the local copy of it - otherwise the token would stay valid until it
@@ -3926,6 +3928,38 @@
   const MY_LOCATION_SEND_INTERVAL_MS = 30 * 1000; // never persist more than once per 30s...
   const MY_LOCATION_SEND_MIN_MOVE_M = 25;          // ...unless the device moved at least this far
 
+  // Remembers, per signed-in user on THIS browser, whether they've turned
+  // live location sharing on - so "Enable Location" only has to be clicked
+  // once, and every later login auto-resumes live tracking instead of just
+  // showing the last saved snapshot. Scoped by user id (not global) so a
+  // shared computer with multiple accounts doesn't leak one person's
+  // sharing preference onto another's login. Deliberately localStorage, not
+  // a server-side column: the browser's own GPS permission is itself
+  // per-origin/per-browser, so a preference saved server-side couldn't skip
+  // the permission prompt on a different device anyway - the one place this
+  // needs to stick is exactly where localStorage already lives.
+  function myLocationAutoTrackKey() {
+    const uid = currentUser && currentUser.id != null ? currentUser.id : 'anon';
+    return `pharmacast_location_autotrack_${uid}`;
+  }
+
+  function isMyLocationAutoTrackEnabled() {
+    try {
+      return localStorage.getItem(myLocationAutoTrackKey()) === '1';
+    } catch (e) {
+      return false; // private browsing / storage disabled - just fall back to manual enable each time
+    }
+  }
+
+  function setMyLocationAutoTrackEnabled(enabled) {
+    try {
+      if (enabled) localStorage.setItem(myLocationAutoTrackKey(), '1');
+      else localStorage.removeItem(myLocationAutoTrackKey());
+    } catch (e) {
+      // storage unavailable - sharing still works for this session, it just won't auto-resume next login
+    }
+  }
+
   /** Great-circle distance in meters - decides whether a new GPS fix moved
    *  far enough to be worth a fresh server write. */
   function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -3972,10 +4006,13 @@
 
   /**
    * Called once per page load (and once right after login) for whichever
-   * dashboard is on screen. Restores the last SAVED position from the
-   * server so the card isn't empty on a fresh visit - this does not request
-   * a new GPS fix and does not start live tracking; that only begins once
-   * the user clicks "Enable Location".
+   * dashboard is on screen. Always restores the last SAVED position from
+   * the server first, so the card isn't empty on a fresh visit. Then, if
+   * this user previously enabled live sharing on this browser (see
+   * isMyLocationAutoTrackEnabled()), automatically resumes live tracking -
+   * no click needed. If they never enabled it, or explicitly stopped it,
+   * the card just shows the last known position until they click "Enable
+   * Location" themselves, same as before.
    */
   async function initMyLocationWidget() {
     const { toggleBtn } = getMyLocationEls();
@@ -3996,6 +4033,10 @@
     } catch (e) {
       // Not logged in yet, or nothing saved so far - the card just starts empty, which is fine.
     }
+
+    if (isMyLocationAutoTrackEnabled()) {
+      startMyLocationSharing({ isAutoResume: true });
+    }
   }
 
   function toggleMyLocationSharing() {
@@ -4003,16 +4044,24 @@
     else startMyLocationSharing();
   }
 
-  function startMyLocationSharing() {
+  function startMyLocationSharing(opts) {
+    const isAutoResume = !!(opts && opts.isAutoResume);
     const { toggleBtn } = getMyLocationEls();
     if (!('geolocation' in navigator)) return;
+    if (myLocationWatchId !== null) return; // already sharing - e.g. auto-resume firing after a manual click on a slow connection
 
-    setMyLocationStatus('Requesting location permission…');
+    setMyLocationStatus(isAutoResume ? 'Resuming live location sharing…' : 'Requesting location permission…');
     myLocationWatchId = navigator.geolocation.watchPosition(
       onMyLocationUpdate,
       onMyLocationError,
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
     );
+
+    // Remember the choice so the NEXT login on this browser resumes
+    // automatically too. Not set only inside the manual click path, because
+    // an auto-resume that later hits a fresh "Enable Location" click should
+    // behave identically - both mean "yes, keep sharing".
+    setMyLocationAutoTrackEnabled(true);
 
     if (toggleBtn) {
       toggleBtn.innerHTML = '<i class="bi bi-geo-alt-fill me-1"></i> Stop Sharing';
@@ -4021,10 +4070,24 @@
     }
   }
 
-  function stopMyLocationSharing() {
+  /**
+   * @param {{ keepAutoResumePreference?: boolean }} [opts] - Pass
+   * `keepAutoResumePreference: true` when this is just housekeeping (e.g.
+   * logout stopping the GPS watch so a stray callback doesn't fire with no
+   * auth token) rather than the user actually asking to stop sharing. Only
+   * a real "Stop Sharing" click or a permission error should turn off
+   * auto-resume for next login - logging out on its own must not, or the
+   * "enable once, stay on every login" behavior would reset itself on every
+   * single logout.
+   */
+  function stopMyLocationSharing(opts) {
+    const keepAutoResumePreference = !!(opts && opts.keepAutoResumePreference);
     if (myLocationWatchId !== null) {
       navigator.geolocation.clearWatch(myLocationWatchId);
       myLocationWatchId = null;
+    }
+    if (!keepAutoResumePreference) {
+      setMyLocationAutoTrackEnabled(false);
     }
     const { toggleBtn } = getMyLocationEls();
     if (toggleBtn) {
