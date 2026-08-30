@@ -1676,23 +1676,24 @@
     });
   }
 
-  // ─── 7. ADMIN REGISTRATION APPROVALS WORKFLOW ───
-  // Pending registrations now come straight from the real users table
-  // (GET /api/users, filtered to status='pending') instead of a separate
-  // fake local request queue - approve/reject act directly on that same row.
+  // ─── 7. ADMIN REGISTRATION APPROVALS WORKFLOW (FR8: view pending
+  // registration requests, feeding FR9 approve / FR10 reject) ───
+  // Pending registrations come straight from the real users table via
+  // GET /api/users?status=pending (server-side filter - see routes/users.routes.js)
+  // instead of a separate fake local request queue - approve/reject act
+  // directly on that same row.
   async function renderPendingApprovalsTable() {
     const tbody = document.getElementById('admin-approvals-tbody');
     if (!tbody) return;
 
-    let allUsers;
+    let reqs;
     try {
-      allUsers = await api.get('/api/users');
+      reqs = await api.get('/api/users?status=pending');
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Could not load registrations from server: ${escapeHtml(err.message)}</td></tr>`;
       return;
     }
 
-    const reqs = allUsers.filter(u => u.status === 'pending');
     tbody.innerHTML = '';
 
     if (reqs.length === 0) {

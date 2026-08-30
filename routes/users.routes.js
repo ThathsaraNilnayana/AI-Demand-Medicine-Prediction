@@ -27,13 +27,33 @@ async function countOtherActiveAdmins(excludingUserId) {
 // GET all users (password hash excluded) - unchanged shape, now includes full_name/phone
 // Admin-only: this lists every user's email/phone/pharmacy name, so it must not
 // be reachable by an unauthenticated caller or a non-admin role.
+//
+// Optional ?status= filter (FR8): lets the admin dashboard's "Pending
+// Approvals" table ask the server for just the pending registrations
+// directly, rather than always downloading every user account and
+// filtering client-side. Also usable for status=active/rejected/inactive
+// if a future view needs those. Omitting ?status entirely preserves the
+// original "every user" behaviour exactly, so nothing that already calls
+// this endpoint without the param is affected.
+const VALID_USER_STATUSES = ['pending', 'active', 'rejected', 'inactive'];
 router.get('/', requireAuth, requireRole('admin'), async (req, res, next) => {
     try {
-        const rows = await db.all(`
-            SELECT user_id, username, email, role, full_name, phone, pharmacy_name, status, created_at, rejection_reason
-            FROM users
-            ORDER BY created_at DESC
-        `);
+        const { status } = req.query;
+        if (status && !VALID_USER_STATUSES.includes(status)) {
+            return res.status(400).json({ error: `Invalid status filter. Use one of: ${VALID_USER_STATUSES.join(', ')}` });
+        }
+        const rows = status
+            ? await db.all(`
+                SELECT user_id, username, email, role, full_name, phone, pharmacy_name, status, created_at, rejection_reason
+                FROM users
+                WHERE status = ?
+                ORDER BY created_at DESC
+            `, [status])
+            : await db.all(`
+                SELECT user_id, username, email, role, full_name, phone, pharmacy_name, status, created_at, rejection_reason
+                FROM users
+                ORDER BY created_at DESC
+            `);
         res.json(rows);
     } catch (err) { next(err); }
 });
