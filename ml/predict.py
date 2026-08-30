@@ -710,5 +710,70 @@ def main():
     print(json.dumps(result))
 
 
+def serve_forever():
+    """
+    Persistent worker mode (`python predict.py --serve`): reads one JSON
+    request per line from stdin, writes one JSON response per line to
+    stdout, and keeps doing that for as long as stdin stays open - instead
+    of exiting after a single prediction the way `main()` does.
+
+    Why: every module-level import above (pandas, numpy, scikit-learn,
+    statsmodels) is genuinely expensive - measured at ~1.6s of CPU time,
+    paid again on every single `python predict.py` invocation, regardless
+    of how small the medicine's series is. `main()`'s one-shot-per-process
+    model means the nightly job (~2,969 medicines) pays that ~1.6s import
+    cost ~2,969 times: roughly 80 minutes spent re-importing the same
+    libraries before any actual model fitting happens. Importing once and
+    handling many requests in the same already-warm process (see
+    services/predictionService.js's worker pool) eliminates essentially all
+    of that, and makes each individual "Regenerate Forecast" click in the
+    UI feel snappier too, since it no longer waits on a fresh interpreter
+    + import every time.
+
+    Protocol, one JSON object per line each direction:
+        request:  {"id": "<anything>", "monthly": [...], "horizon": 12}
+        response: {"id": "<same id>", ...same shape generate_prediction()
+                   already returns..., or {"status": "error", "error": ...}
+                   on a bad request or an exception}
+
+    Each request is handled independently and defensively: a malformed
+    payload or an exception inside generate_prediction() is reported as an
+    error response line, not raised - one bad request must not kill a
+    process the rest of a batch run is relying on to stay up. `main()`
+    above is untouched by any of this: it's still the exact one-shot
+    CLI contract predictionService.js's non-pooled fallback and
+    ml/test_predict.py's TestCliContract both depend on.
+    """
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(line_buffering=True)
+
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        req_id = None
+        try:
+            payload = json.loads(line)
+            req_id = payload.get('id') if isinstance(payload, dict) else None
+            monthly = payload.get('monthly', [])
+            try:
+                horizon = int(payload.get('horizon', 12))
+            except (TypeError, ValueError):
+                raise ValueError('horizon must be an integer')
+            if horizon < 1 or horizon > 60:
+                raise ValueError('horizon must be between 1 and 60')
+            result = generate_prediction(monthly, horizon)
+            result['id'] = req_id
+        except Exception as e:
+            result = {'id': req_id, 'status': 'error', 'error': str(e)}
+
+        sys.stdout.write(json.dumps(result) + '\n')
+        sys.stdout.flush()
+
+
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == '--serve':
+        serve_forever()
+    else:
+        main()

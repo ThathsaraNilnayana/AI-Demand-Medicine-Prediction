@@ -4056,6 +4056,12 @@
    * website should update when the location changes" behaviour, and it
    * runs on every GPS fix regardless of whether that particular fix also
    * gets persisted to the server (see maybePersistMyLocation).
+   *
+   * Also re-classifies which Sri Lankan climate zone this fix falls in and
+   * refreshes the monsoon banner for it (see updateMonsoonBanner above) -
+   * so the banner is only ever as accurate as the most recent location
+   * fix, and updates the moment a new one arrives, exactly like the
+   * coordinates/map do.
    */
   function renderMyLocation(lat, lng, whenIso, isLive, accuracy) {
     const { status, coordsWrap, lat: latEl, lng: lngEl, updated } = getMyLocationEls();
@@ -4067,6 +4073,7 @@
       status.textContent = `Sharing live location${accuracy ? ` (±${Math.round(accuracy)}m)` : ''}.`;
     }
     renderMyLocationMap(lat, lng);
+    updateMonsoonBanner(classifySriLankaClimateZone(lat, lng));
   }
 
   function renderMyLocationMap(lat, lng) {
@@ -4274,29 +4281,111 @@
     document.body.style.paddingTop = `${banner.offsetHeight || 44}px`;
   }
 
+  // ─── Location-aware monsoon banner ───
+  // The South-West monsoon (May-Sep) only rains on the southwest coast and
+  // central highlands ("Wet Zone"); the east coast stays dry through it. The
+  // Northeast monsoon (Dec-Feb, preceded by an Oct-Nov inter-monsoon) is the
+  // reverse - it rains on the north/east ("Dry Zone") while the southwest
+  // stays comparatively dry. A single island-wide "SW Monsoon" banner is
+  // therefore wrong for roughly half the country half the year: a pharmacy
+  // in Jaffna sees no SW-monsoon rain in July, and one in Colombo sees none
+  // of the NE-monsoon rain in January.
+  //
+  // Sources consulted (see the PharmaCast README/commit history for the
+  // full citations):
+  //  - Sri Lanka's standard three-zone rainfall classification (Wet /
+  //    Intermediate / Dry) and which monsoon rains on which zone.
+  //  - Pinto et al., "Coherence of dengue incidence and climate in the wet
+  //    and dry zones of Sri Lanka": the Wet Zone shows LOW seasonal
+  //    variation in dengue (elevated risk through its whole May-Sep rainy
+  //    stretch, no sharp single peak); the Dry Zone shows HIGH seasonal
+  //    variation, tracking its Oct-Feb rains.
+  //
+  // Reference cities used to classify a lat/lng into a zone, by NEAREST
+  // city rather than a lat/lon split - the zone boundaries are irregular
+  // (the Wet Zone reaches into the central highlands), so "nearest city
+  // with a known, uncontroversial zone" is easier to keep correct than an
+  // approximated polygon.
+  const SRI_LANKA_CLIMATE_ZONE_CITIES = [
+    { name: 'Colombo', lat: 6.9271, lng: 79.8612, zone: 'wet' },
+    { name: 'Negombo', lat: 7.2083, lng: 79.8358, zone: 'wet' },
+    { name: 'Kalutara', lat: 6.5854, lng: 79.9607, zone: 'wet' },
+    { name: 'Galle', lat: 6.0535, lng: 80.2210, zone: 'wet' },
+    { name: 'Matara', lat: 5.9549, lng: 80.5550, zone: 'wet' },
+    { name: 'Ratnapura', lat: 6.6828, lng: 80.4012, zone: 'wet' },
+    { name: 'Kandy', lat: 7.2906, lng: 80.6337, zone: 'wet' },
+    { name: 'Nuwara Eliya', lat: 6.9497, lng: 80.7891, zone: 'wet' },
+    { name: 'Kurunegala', lat: 7.4867, lng: 80.3647, zone: 'intermediate' },
+    { name: 'Puttalam', lat: 8.0362, lng: 79.8283, zone: 'intermediate' },
+    { name: 'Badulla', lat: 6.9934, lng: 81.0550, zone: 'intermediate' },
+    { name: 'Monaragala', lat: 6.8714, lng: 81.3507, zone: 'intermediate' },
+    { name: 'Jaffna', lat: 9.6615, lng: 80.0255, zone: 'dry' },
+    { name: 'Vavuniya', lat: 8.7514, lng: 80.4971, zone: 'dry' },
+    { name: 'Anuradhapura', lat: 8.3114, lng: 80.4037, zone: 'dry' },
+    { name: 'Polonnaruwa', lat: 7.9403, lng: 81.0188, zone: 'dry' },
+    { name: 'Trincomalee', lat: 8.5874, lng: 81.2152, zone: 'dry' },
+    { name: 'Batticaloa', lat: 7.7310, lng: 81.6747, zone: 'dry' },
+    { name: 'Ampara', lat: 7.2975, lng: 81.6747, zone: 'dry' },
+    { name: 'Hambantota', lat: 6.1246, lng: 81.1185, zone: 'dry' }
+  ];
+  // A location further than this from every reference city isn't Sri Lanka
+  // (the island is ~435km end to end) - don't guess a zone for it.
+  const SRI_LANKA_ZONE_MAX_DISTANCE_M = 350000;
+
+  /** Classifies a lat/lng into 'wet' | 'intermediate' | 'dry', or null if
+   *  it's nowhere near Sri Lanka (or haversineMeters isn't available yet). */
+  function classifySriLankaClimateZone(lat, lng) {
+    if (typeof haversineMeters !== 'function') return null;
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const city of SRI_LANKA_CLIMATE_ZONE_CITIES) {
+      const d = haversineMeters(lat, lng, city.lat, city.lng);
+      if (d < nearestDist) { nearestDist = d; nearest = city; }
+    }
+    return (nearest && nearestDist <= SRI_LANKA_ZONE_MAX_DISTANCE_M) ? nearest.zone : null;
+  }
+
   /**
-   * Shows/hides the "SW Monsoon Season: High Dengue & Flu Risk" pill based on
-   * today's actual date, instead of the hardcoded text it used to be (it
-   * previously showed year-round, which is only true for part of the year).
+   * Shows/hides the monsoon/vector-borne-illness pill for the given climate
+   * zone (or the island-wide default when `zone` is null/undefined - i.e.
+   * before a location is known, same behaviour as before this zone-aware
+   * version existed). Called with no zone at page load, then re-called with
+   * a real zone once initMyLocationWidget()/renderMyLocation() knows where
+   * the signed-in user actually is - so sharing (or moving with) a live
+   * location is what turns the generic banner into a locally-accurate one,
+   * and keeps it that way as the location changes.
    *
-   * Sri Lanka's South-West monsoon runs May-September, and health authorities
-   * (Sri Lanka Ministry of Health, National Dengue Control Unit) have
-   * documented a direct link between the monsoon rains/flooding and rising
-   * dengue cases during this window. Outside May-September the banner is
-   * hidden entirely rather than shown with stale/inaccurate content - there's
-   * no verified claim to make about dengue/flu risk the rest of the year, so
-   * saying nothing is more honest than saying something wrong.
+   * Outside each zone's rainy window the banner is hidden entirely rather
+   * than shown with stale/inaccurate content - there's no verified claim to
+   * make the rest of the year, so saying nothing is more honest than saying
+   * something wrong.
    */
-  function updateMonsoonBanner() {
+  function updateMonsoonBanner(zone) {
     const el = document.getElementById('monsoon-season-banner');
     const textEl = document.getElementById('monsoon-season-banner-text');
     if (!el || !textEl) return;
 
     const month = new Date().getMonth() + 1; // 1 (Jan) - 12 (Dec)
-    const inSWMonsoon = month >= 5 && month <= 9; // May - September
+    const inSWMonsoon = month >= 5 && month <= 9;                                  // May - September
+    const inNEMonsoon = month === 10 || month === 11 || month === 12 || month <= 2;  // Oct - Feb (2nd inter-monsoon + NE monsoon)
 
-    if (inSWMonsoon) {
-      textEl.textContent = 'SW Monsoon Season: High Dengue & Flu Risk';
+    let text = null;
+    if (zone === 'wet') {
+      if (inSWMonsoon) text = 'SW Monsoon Season: High Dengue & Flu Risk';
+    } else if (zone === 'dry') {
+      if (inNEMonsoon) text = 'NE Monsoon Season: Rising Dengue & Flu Risk';
+    } else if (zone === 'intermediate') {
+      if (inSWMonsoon) text = 'SW Monsoon Season: Elevated Illness Risk';
+      else if (inNEMonsoon) text = 'NE Monsoon Season: Elevated Illness Risk';
+    } else {
+      // Zone unknown (no location shared yet, or the fix isn't near Sri
+      // Lanka) - fall back to the original island-wide SW-monsoon rule
+      // rather than guessing a zone.
+      if (inSWMonsoon) text = 'SW Monsoon Season: High Dengue & Flu Risk';
+    }
+
+    if (text) {
+      textEl.textContent = text;
       el.style.display = '';
     } else {
       el.style.display = 'none';

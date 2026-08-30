@@ -13,5 +13,13 @@ module.exports = {
     // never drift apart.
     defaultResetPassword: process.env.DEFAULT_RESET_PASSWORD || 'Password@123',
     pythonBin: process.env.PYTHON_BIN || 'python',
+    // Number of long-lived `python predict.py --serve` processes kept warm
+    // by services/mlWorkerPool.js. Default of 2 is conservative for
+    // Render's free tier (one shared vCPU, limited RAM) - see that module's
+    // header comment for the reasoning. Raise it if you're on hardware with
+    // more real cores to spare; ML_WORKER_COUNT=1 disables the parallelism
+    // (still gets the "import once, not once per medicine" win) if RAM is
+    // tight.
+    mlWorkerCount: Number(process.env.ML_WORKER_COUNT) || 2,
     dbPath: require('path').join(__dirname, 'pharmacast.db')
 };

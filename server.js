@@ -6,6 +6,7 @@ const path = require('path');
 const config = require('./config');
 const { db } = require('./db');
 const { errorHandler } = require('./middleware/errorHandler');
+const mlWorkerPool = require('./services/mlWorkerPool');
 
 const authRoutes = require('./routes/auth.routes');
 const medicinesRoutes = require('./routes/medicines.routes');
@@ -125,10 +126,19 @@ app.listen(config.port, () => {
     console.log(`   GET  /api/stats\n`);
 });
 
-process.on('SIGINT', () => {
+// Shared by SIGINT (Ctrl+C locally) and SIGTERM (what Render sends on every
+// redeploy/restart of the free-tier instance). Without stopping the ML
+// worker pool here, each deploy would orphan its `python predict.py
+// --serve` processes - they don't share this process's lifetime unless
+// something explicitly kills them.
+function shutdown(signal) {
+    console.log(`\n${signal} received, shutting down...`);
+    mlWorkerPool.shutdown();
     db.close((err) => {
         if (err) console.error(err);
-        console.log('\n✅ Database connection closed');
+        console.log('✅ Database connection closed');
         process.exit(0);
     });
-});
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

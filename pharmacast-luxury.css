@@ -1,0 +1,1377 @@
+/* ==========================================================================
+   PharmaCast — AI-Based Medicine Demand Prediction System
+   Luxury Natural Medicine / Botanical Clinical Pharmacy Theme (Sri Lanka)
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  /* ─── Botanical Luxury Color Palette ─── */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f0fdf4;
+  --bg-card: #ffffff;
+  --bg-card-hover: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.88);
+  --bg-glass-dark: rgba(15, 23, 42, 0.85);
+
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+
+  --emerald-primary: #059669;
+  --emerald-hover: #047857;
+  --emerald-light: #d1fae5;
+  --emerald-dark: #064e3b;
+
+  --botanical-sage: #34d399;
+  --botanical-mint: #a7f3d0;
+  --botanical-teal: #0d9488;
+
+  --medical-blue: #0284c7;
+  --medical-blue-light: #e0f2fe;
+
+  --luxury-gold: #d4af37;
+  --luxury-gold-light: #fef9c3;
+  --luxury-gold-dark: #854d0e;
+
+  /* ─── Color-Coded Stock Status Badges ─── */
+  --badge-green-bg: #d1fae5;
+  --badge-green-text: #065f46;
+  --badge-green-border: #10b981;
+
+  --badge-yellow-bg: #fef3c7;
+  --badge-yellow-text: #92400e;
+  --badge-yellow-border: #f59e0b;
+
+  --badge-red-bg: #fee2e2;
+  --badge-red-text: #991b1b;
+  --badge-red-border: #ef4444;
+
+  /* ─── Demand Shading Colors (Chart.js) ─── */
+  --chart-zone-low: rgba(209, 250, 229, 0.45);      /* Green zone */
+  --chart-zone-mod: rgba(254, 243, 199, 0.45);      /* Yellow zone */
+  --chart-zone-high: rgba(254, 226, 226, 0.55);     /* Red zone */
+
+  /* ─── Shadows & Borders ─── */
+  --shadow-sm: 0 4px 12px -2px rgba(16, 185, 129, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 10px 25px -5px rgba(16, 185, 129, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 20px 40px -10px rgba(16, 185, 129, 0.12), 0 10px 15px -5px rgba(0, 0, 0, 0.04);
+  --shadow-gold: 0 10px 30px -5px rgba(212, 175, 55, 0.25);
+  
+  --border-subtle: #e2e8f0;
+  --border-emerald: rgba(16, 185, 129, 0.25);
+  --border-gold: rgba(212, 175, 55, 0.4);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-full: 9999px;
+
+  --transition-smooth: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Reset & Base Settings ─── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+
+/* ─── Animated Botanical Background Aurora ─── */
+.botanical-aurora-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background: radial-gradient(circle at 10% 20%, rgba(209, 250, 229, 0.7) 0%, transparent 40%),
+              radial-gradient(circle at 90% 80%, rgba(224, 242, 254, 0.6) 0%, transparent 40%),
+              radial-gradient(circle at 50% 50%, rgba(254, 249, 195, 0.35) 0%, transparent 50%);
+}
+
+.botanical-aurora-bg::before,
+.botanical-aurora-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.55;
+  animation: auroraFloat 16s ease-in-out infinite alternate;
+}
+
+.botanical-aurora-bg::before {
+  width: 550px;
+  height: 550px;
+  background: radial-gradient(circle, #34d399 0%, transparent 70%);
+  top: -120px;
+  left: -80px;
+}
+
+.botanical-aurora-bg::after {
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, #38bdf8 0%, transparent 70%);
+  bottom: -100px;
+  right: -60px;
+  animation-duration: 20s;
+  animation-delay: -5s;
+}
+
+@keyframes auroraFloat {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(60px, 40px) scale(1.1); }
+  100% { transform: translate(-40px, -30px) scale(0.95); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   iOS-STYLE NAVIGATION BAR
+   Translucent "frosted glass" surface, hairline separator, and a
+   segmented-control style link row. Everything is nowrap + horizontally
+   scrollable so labels can never wrap onto a second line, which is what
+   made the old bar look broken at narrower widths.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --ios-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ios-ease: cubic-bezier(0.4, 0.0, 0.2, 1);
+  --nav-height: 60px;
+}
+
+.navbar-luxury {
+  /* saturate() is what gives Apple's frosted glass its colour "bloom" */
+  background: rgba(252, 253, 252, 0.72);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding: 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  transition: background 0.3s var(--ios-ease), box-shadow 0.3s var(--ios-ease);
+}
+
+/* Subtle lift once the page scrolls (toggled by JS). */
+.navbar-luxury.is-scrolled {
+  background: rgba(252, 253, 252, 0.88);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset,
+              0 4px 24px -8px rgba(5, 150, 105, 0.16);
+}
+
+/* Bootstrap caps .container at 1140/1320px, which was squeezing five nav
+   labels into far too little space on wide displays. The bar (and only the
+   bar) gets to use the full viewport width. */
+.navbar-luxury > .container {
+  min-height: var(--nav-height);
+  gap: 16px;
+  max-width: 100%;
+  width: 100%;
+  padding-left: clamp(16px, 3vw, 40px);
+  padding-right: clamp(16px, 3vw, 40px);
+}
+
+/* ─── Brand ─── */
+.navbar-brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-decoration: none;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.logo-icon-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;              /* iOS "squircle" proportion */
+  background: linear-gradient(160deg, #10b981, var(--emerald-dark));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 19px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.28),
+              0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  transition: transform 0.4s var(--ios-spring), box-shadow 0.3s var(--ios-ease);
+}
+
+.navbar-brand-logo:active .logo-icon-box { transform: scale(0.92); }
+.navbar-brand-logo:hover .logo-icon-box {
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.38), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
+/* Name + subtitle stack vertically so neither can wrap. */
+.logo-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.1;
+  min-width: 0;
+}
+
+.logo-text {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.16rem;
+  font-weight: 700;
+  color: var(--emerald-dark);
+  letter-spacing: -0.022em;          /* SF Pro-like optical tightening */
+  white-space: nowrap;
+}
+
+.logo-badge {
+  font-size: 0.585rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+/* ─── Segmented-control link row ─── */
+.nav-segment {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-full);
+  background: rgba(118, 118, 128, 0.08);   /* iOS segmented track */
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.nav-segment::-webkit-scrollbar { display: none; }
+
+.nav-link-item {
+  color: var(--text-muted);
+  font-weight: 550;
+  font-size: 0.815rem;
+  letter-spacing: -0.01em;
+  padding: 7px 13px;
+  border-radius: var(--radius-full);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;               /* the fix for wrapped labels */
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  transition: color 0.2s var(--ios-ease),
+              background 0.25s var(--ios-ease),
+              transform 0.35s var(--ios-spring);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-link-item i { font-size: 0.94em; opacity: 0.85; }
+
+.nav-link-item:hover {
+  color: var(--emerald-dark);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.nav-link-item:active { transform: scale(0.95); }
+
+/* Selected pill - the white "thumb" of an iOS segmented control. */
+.nav-link-item.active {
+  color: var(--emerald-dark);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1),
+              0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
+.nav-link-item.active i { opacity: 1; }
+
+/* Trailing actions (Logout / Login) sit outside the segmented track. */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 1400px) {
+  .nav-link-item { padding: 7px 11px; font-size: 0.79rem; }
+}
+
+/* Below this the labels are dropped and the bar becomes icon-only, which
+   is far cleaner than letting five text links fight for space. */
+@media (max-width: 1150px) {
+  .nav-link-item .nav-label { display: none; }
+  .nav-link-item { padding: 8px 10px; }
+  .nav-link-item i { font-size: 1.05em; opacity: 1; }
+}
+
+@media (max-width: 991px) {
+  .logo-badge { display: none; }
+  .logo-text { font-size: 1.06rem; }
+}
+
+@media (max-width: 767px) {
+  :root { --nav-height: 54px; }
+  .navbar-luxury > .container { gap: 10px; }
+  .logo-icon-box { width: 34px; height: 34px; font-size: 17px; border-radius: 10px; }
+  .logo-text { font-size: 0.98rem; }
+  .nav-segment { padding: 2px; }
+}
+
+.btn-luxury-primary {
+  background: linear-gradient(135deg, var(--emerald-primary), var(--emerald-dark));
+  color: #ffffff !important;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 10px 24px;
+  border-radius: var(--radius-full);
+  border: none;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.28);
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-luxury-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(5, 150, 105, 0.4);
+  background: linear-gradient(135deg, var(--emerald-hover), #022c22);
+  color: #ffffff;
+}
+
+.btn-luxury-outline {
+  background: #ffffff;
+  color: var(--emerald-dark) !important;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 10px 24px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--emerald-primary);
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-luxury-outline:hover {
+  background: var(--emerald-light);
+  border-color: var(--emerald-hover);
+  transform: translateY(-2px);
+}
+
+.btn-luxury-gold {
+  background: linear-gradient(135deg, #d4af37, #f59e0b);
+  color: #ffffff !important;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 10px 24px;
+  border-radius: var(--radius-full);
+  border: none;
+  box-shadow: var(--shadow-gold);
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.btn-luxury-gold:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 14px 28px rgba(212, 175, 55, 0.4);
+}
+
+/* ─── Card Styles & Glassmorphism ─── */
+.card-luxury {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-smooth);
+  overflow: hidden;
+  position: relative;
+}
+
+.card-luxury:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-emerald);
+}
+
+.card-luxury-gold {
+  background: linear-gradient(145deg, #ffffff, #fffbeb);
+  border: 1.5px solid var(--border-gold);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-gold);
+  position: relative;
+  overflow: hidden;
+}
+
+.card-luxury-gold::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.15) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ─── Stat Counter Cards ─── */
+.stat-card-luxury {
+  padding: 24px;
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: var(--transition-smooth);
+}
+
+.stat-card-luxury:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+/* "My Location" dashboard widget (js/pharmacast-app.js) - the embedded
+   Leaflet map next to the coordinates/status text. Needs an explicit
+   width/height: Leaflet measures its container in pixels at creation time
+   and renders nothing (or blank tiles) without one. */
+.my-location-map {
+  width: 100%;
+  max-width: 280px;
+  height: 180px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+@media (max-width: 767.98px) {
+  .my-location-map {
+    max-width: 100%;
+    height: 200px;
+  }
+}
+
+.stat-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+
+.stat-icon-emerald {
+  background: var(--emerald-light);
+  color: var(--emerald-dark);
+}
+
+.stat-icon-yellow {
+  background: var(--badge-yellow-bg);
+  color: var(--badge-yellow-text);
+}
+
+.stat-icon-red {
+  background: var(--badge-red-bg);
+  color: var(--badge-red-text);
+}
+
+.stat-icon-blue {
+  background: var(--medical-blue-light);
+  color: var(--medical-blue);
+}
+
+/* ─── Color-Coded Stock Status Badges ─── */
+.badge-stock-green {
+  background-color: var(--badge-green-bg);
+  color: var(--badge-green-text);
+  border: 1px solid var(--badge-green-border);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-stock-yellow {
+  background-color: var(--badge-yellow-bg);
+  color: var(--badge-yellow-text);
+  border: 1px solid var(--badge-yellow-border);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-stock-red {
+  background-color: var(--badge-red-bg);
+  color: var(--badge-red-text);
+  border: 1px solid var(--badge-red-border);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  animation: pulseRedBadge 2s infinite;
+}
+
+@keyframes pulseRedBadge {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+/* ─── Prominent Search Bars ─── */
+.search-container-luxury {
+  position: relative;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.search-input-luxury {
+  width: 100%;
+  padding: 18px 24px 18px 56px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--border-subtle);
+  background: #ffffff;
+  color: var(--text-main);
+  font-size: 1.05rem;
+  font-family: 'Inter', sans-serif;
+  box-shadow: var(--shadow-md);
+  transition: var(--transition-smooth);
+  outline: none;
+}
+
+.search-input-luxury:focus {
+  border-color: var(--emerald-primary);
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.15), var(--shadow-lg);
+}
+
+.search-icon-luxury {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 22px;
+  color: var(--emerald-primary);
+  pointer-events: none;
+}
+
+/* Labels inside the dark ML Diagnostics panel (index.html, medicine detail
+   page). Bootstrap's `.text-muted` resolves to --bs-secondary-color, which
+   defaults to a near-black rgba(33,37,41,.75) unless the page opts into
+   [data-bs-theme=dark] - this site never does, since everything else is the
+   light "luxury" theme. That made every tile's uppercase label (Model Type,
+   Backtest sMAPE, etc.) render near-black text on the panel's near-black
+   background: technically present, invisible in practice. The values
+   themselves were fine because they use explicit colored classes
+   (text-info/text-warning/etc.), not text-muted. */
+.diag-label {
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+
+.search-dropdown-luxury {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  max-height: 380px;
+  overflow-y: auto;
+  display: none;
+}
+
+/* The prominent dashboard search bar sits inside a .card-luxury card, and
+   .card-luxury sets overflow:hidden (needed elsewhere for rounded corners
+   and the button click-ripple effect - see the `.btn, .nav-link-item,
+   .card-luxury { overflow: hidden }` rule further down this file). Without
+   this override, the dropdown below the input - which is position:absolute
+   and taller than the card - gets clipped by the card's own edge, so
+   results appear cut off mid-row with the scrollbar overlapping the text
+   instead of showing the full list. overflow:visible here only affects
+   clipping of content that pokes outside the box; the card's rounded
+   corners (border-radius) still apply to its own background/border either
+   way. Compound selector (.card-luxury.card-luxury-search) so this wins by
+   specificity over the plain `.card-luxury` rule regardless of which one
+   comes later in the file - a single-class override would otherwise lose
+   to that rule since both have equal specificity.
+
+   SECOND BUG, found after the overflow fix went live: with overflow no
+   longer clipping it, the dropdown was visible but painted BEHIND the
+   stat cards row underneath it, so the two visually collided instead of
+   the dropdown floating cleanly on top. Cause: .card-luxury sets
+   `will-change: transform, box-shadow` (further down this file, for the
+   hover-lift animation). will-change on ANY value that could produce a
+   transform silently creates a new CSS stacking context on that element -
+   this is easy to miss because nothing about "will-change" sounds like a
+   stacking property. Once that happens, z-index on a descendant (the
+   dropdown's z-index:500) only wins contests INSIDE that stacking
+   context; it can't reach outside to beat the stat cards, which sit in
+   a later, sibling stacking context and paint after. Giving the card
+   itself an explicit z-index lifts its entire stacking context above
+   its unelevated (z-index:auto) siblings, which is what actually needs
+   to move. */
+.card-luxury.card-luxury-search {
+  overflow: visible;
+  z-index: 20;
+}
+
+.search-dropdown-item {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-dropdown-item > div:first-child {
+  min-width: 0; /* lets the name/category text truncate instead of pushing the badge off-edge */
+  flex: 1 1 auto;
+}
+
+.search-dropdown-item > div:first-child strong,
+.search-dropdown-item > div:first-child .small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-dropdown-item > div:last-child {
+  flex: 0 0 auto;
+}
+
+.search-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.search-dropdown-item:hover {
+  background: var(--emerald-light);
+}
+
+/* ─── Hero Section ─── */
+.hero-luxury {
+  padding: 60px 0 80px;
+  text-align: center;
+  position: relative;
+}
+
+.hero-title {
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, var(--emerald-dark) 0%, var(--emerald-primary) 50%, var(--medical-blue) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-subtitle {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  max-width: 720px;
+  margin: 0 auto 36px;
+  font-weight: 400;
+}
+
+/* ─── Tables (Admin & Inventory) ─── */
+.table-luxury {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 10px;
+}
+
+.table-luxury thead th {
+  background-color: var(--bg-secondary);
+  color: var(--emerald-dark);
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--border-emerald);
+  text-align: left;
+}
+
+.table-luxury tbody tr {
+  transition: background-color 0.2s;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.table-luxury tbody tr:hover {
+  background-color: var(--emerald-light);
+}
+
+.table-luxury tbody td {
+  padding: 16px 18px;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ─── Dense admin tables ───
+   The admin "All Registered Platform Accounts" table carries 8 columns, the
+   last of which holds three action buttons. At the default 18px cell padding
+   that pushed the row well past the available width, and because the buttons
+   were in a flex-wrap container the Account Controls column absorbed the
+   squeeze - the three buttons collapsed into a cramped stack that was hard to
+   read and hard to hit. These trim the padding so the row fits, and keep the
+   controls on a single line. */
+.table-luxury.table-compact thead th,
+.table-luxury.table-compact tbody td {
+  padding: 11px 12px;
+  font-size: 0.9rem;
+}
+
+.table-luxury.table-compact thead th {
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+
+/* One row of buttons, never a wrapped stack. The parent .table-responsive
+   supplies a horizontal scrollbar on genuinely narrow screens, which is far
+   easier to use than buttons crushed into a 90px column. */
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.table-actions .btn {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* ─── Chart Container & Background Shading Guide ─── */
+.chart-card-container {
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.chart-legend-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+  padding: 12px 18px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 6px;
+}
+
+/* ─── Recommendation Pill Box ─── */
+.recommendation-box {
+  background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+  border: 2px solid #10b981;
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  box-shadow: 0 12px 30px -5px rgba(16, 185, 129, 0.18);
+}
+
+.rec-number-display {
+  font-family: 'Outfit', sans-serif;
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: var(--emerald-dark);
+  line-height: 1;
+}
+
+.rec-confidence-badge {
+  background: var(--luxury-gold-light);
+  color: var(--luxury-gold-dark);
+  border: 1px solid var(--border-gold);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ─── Logged-In User Role Badge (Navbar) ───
+   A small avatar-card chip: a dashed, slowly-rotating ring around a role
+   icon, paired with a stacked "Role / Full Name" label. Swaps its accent
+   color per role via .role-admin / .role-pharmacist. */
+.user-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px 3px 3px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.9);
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: box-shadow 0.25s var(--ios-ease), transform 0.35s var(--ios-spring);
+  animation: userBadgePopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.user-role-badge:hover {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+/* On narrow screens keep just the avatar - the name is the first thing
+   worth sacrificing before the bar starts to feel cramped. */
+@media (max-width: 1150px) {
+  .user-role-badge { padding: 3px; gap: 0; }
+  .user-role-badge-text { display: none; }
+}
+
+@keyframes userBadgePopIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.user-role-badge-avatar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--emerald-light);
+  color: var(--emerald-dark);
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.user-role-badge-avatar::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--botanical-teal);
+  animation: userBadgeRingSpin 14s linear infinite;
+}
+
+@keyframes userBadgeRingSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.user-role-badge-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  max-width: 190px;
+}
+
+.user-role-badge-role {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--emerald-primary);
+}
+
+.user-role-badge-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Admin variant: swap the emerald accent for the luxury gold used elsewhere
+   for admin-only surfaces, so the badge visually signals elevated access. */
+.user-role-badge.role-admin {
+  border-color: var(--border-gold);
+}
+
+.user-role-badge.role-admin .user-role-badge-avatar {
+  background: var(--luxury-gold-light);
+  color: var(--luxury-gold-dark);
+}
+
+.user-role-badge.role-admin .user-role-badge-avatar::before {
+  border-color: var(--luxury-gold);
+}
+
+.user-role-badge.role-admin .user-role-badge-role {
+  color: var(--luxury-gold-dark);
+}
+
+/* ─── Table row action group (medicine library) ───
+   Bootstrap's .btn-group squares off the inner corners, which fights the
+   pill language used everywhere else. Keep the buttons as separate rounded
+   chips with a small gap instead. */
+.btn-group[aria-label="Medicine actions"] {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.btn-group[aria-label="Medicine actions"] > .btn {
+  border-radius: var(--radius-full) !important;
+  white-space: nowrap;
+  transition: transform 0.3s var(--ios-spring),
+              background 0.2s var(--ios-ease),
+              color 0.2s var(--ios-ease);
+}
+
+.btn-group[aria-label="Medicine actions"] > .btn:active:not(:disabled) {
+  transform: scale(0.93);
+}
+
+.btn-group[aria-label="Medicine actions"] > .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Page Transitions & Micro-Animations ─── */
+.page-view {
+  display: none;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+}
+
+.page-view.active-page {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Auth Pages: Ambient Medicine Photo Backdrop ───
+   A single photo (syringe + medicine), recoloured on-brand via
+   background-blend-mode: color rather than edited in the source file —
+   the emerald/gold gradient layer replaces the photo's hue/saturation
+   while keeping its luminance, so the same asset always tracks the
+   theme's palette. A soft white-to-mint fade on top keeps the login/
+   register card the clear focal point rather than competing with it. */
+#page-login,
+#page-register {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+
+#page-login::before,
+#page-register::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.55) 0%, rgba(240, 253, 244, 0.72) 55%, rgba(248, 250, 252, 0.94) 100%),
+    linear-gradient(135deg, rgba(5, 150, 105, 0.72), rgba(212, 175, 55, 0.45)),
+    url('../images/medicine-accent.jpg');
+  background-size: cover;
+  background-position: center 35%;
+  background-blend-mode: normal, color, normal;
+  filter: saturate(0.9);
+}
+
+/* ─── Loading Spinner (Medical Pulse) ─── */
+.medical-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--emerald-light);
+  border-top-color: var(--emerald-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Custom Modal Glass styling ─── */
+.modal-backdrop-luxury {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 1050;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-backdrop-luxury.show {
+  display: flex;
+}
+
+.modal-content-luxury {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  max-width: 540px;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  animation: modalPopIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPopIn {
+  0% { opacity: 0; transform: scale(0.92) translateY(15px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Responsive Grid Adjustments */
+@media (max-width: 768px) {
+  .hero-title { font-size: 2.2rem; }
+  .rec-number-display { font-size: 2.2rem; }
+}
+
+/* ==========================================================================
+   PHARMACAST LUXURY ANIMATION & VISUAL EXCELLENCE SUITE
+   ========================================================================== */
+
+/* ─── 1. Ambient Floating Botanical Particles ─── */
+.ambient-particles-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ambient-particle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(2px);
+  animation: ambientDrift 14s infinite ease-in-out alternate;
+}
+
+@keyframes ambientDrift {
+  0% {
+    opacity: 0.15;
+    transform: translate(0, 0) scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 0.55;
+    transform: translate(45px, -35px) scale(1.2) rotate(180deg);
+  }
+  100% {
+    opacity: 0.25;
+    transform: translate(-30px, -70px) scale(0.9) rotate(360deg);
+  }
+}
+
+/* ─── 2. Interactive Cursor Glow Aura ─── */
+.cursor-glow-aura {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.14) 0%, rgba(212, 175, 55, 0.05) 45%, transparent 70%);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  filter: blur(30px);
+  transition: width 0.35s ease, height 0.35s ease, background 0.35s ease;
+  will-change: transform;
+}
+
+.cursor-glow-aura.hovering {
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.22) 0%, rgba(16, 185, 129, 0.12) 50%, transparent 75%);
+}
+
+/* ─── 3. Shimmering Hero Heading Text & Badge Reflection ─── */
+.hero-title-shimmer {
+  background: linear-gradient(135deg, var(--emerald-dark) 0%, #059669 25%, #34d399 50%, #d4af37 75%, var(--emerald-dark) 100%);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientTextFlow 7s ease infinite;
+  display: inline-block;
+}
+
+@keyframes gradientTextFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.badge-shimmer {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+}
+
+.badge-shimmer::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -150%;
+  width: 60%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+  transform: rotate(25deg);
+  animation: shineSweep 4.5s infinite ease-in-out;
+}
+
+@keyframes shineSweep {
+  0%, 75% { left: -150%; }
+  100% { left: 200%; }
+}
+
+/* ─── 4. Enhanced 3D Tilt Feature Cards & Spring Icons ─── */
+.card-luxury {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.4s ease,
+              background 0.4s ease !important;
+  will-change: transform, box-shadow;
+}
+
+.card-luxury:hover {
+  transform: translateY(-9px) scale(1.018) !important;
+  box-shadow: 0 22px 40px -10px rgba(5, 150, 105, 0.18),
+              0 0 25px rgba(212, 175, 55, 0.12) !important;
+  border-color: var(--botanical-sage) !important;
+}
+
+.card-luxury:hover .stat-card-icon,
+.stat-card-luxury:hover .stat-card-icon {
+  transform: scale(1.18) rotate(-8deg);
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.stat-card-icon {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── 5. Staggered Cascading Page Entrance Animations ─── */
+@keyframes cascadeSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: cascadeSlideUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.12s; }
+.stagger-3 { animation-delay: 0.19s; }
+.stagger-4 { animation-delay: 0.26s; }
+.stagger-5 { animation-delay: 0.33s; }
+.stagger-6 { animation-delay: 0.40s; }
+.stagger-7 { animation-delay: 0.47s; }
+
+/* ─── 6. Interactive Button Click Ripple & Breathing Halos ─── */
+.btn, .nav-link-item, .card-luxury {
+  position: relative;
+  overflow: hidden;
+}
+
+.click-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(0);
+  animation: rippleExpand 0.6s linear;
+  pointer-events: none;
+  z-index: 10;
+}
+
+@keyframes rippleExpand {
+  to {
+    transform: scale(4.5);
+    opacity: 0;
+  }
+}
+
+.btn-luxury-primary {
+  animation: primaryButtonPulse 3.5s infinite alternate ease-in-out;
+}
+
+@keyframes primaryButtonPulse {
+  0% {
+    box-shadow: 0 4px 14px rgba(5, 150, 105, 0.28);
+  }
+  100% {
+    box-shadow: 0 10px 26px rgba(5, 150, 105, 0.55),
+                0 0 18px rgba(52, 211, 153, 0.4);
+  }
+}
+
+/* ─── 7. Live Status Concentric Beacon Dots ─── */
+.live-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--emerald-primary);
+  position: relative;
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.live-pulse-dot::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 50%;
+  background: var(--emerald-primary);
+  animation: beaconRingPulse 1.8s infinite cubic-bezier(0.24, 0, 0.38, 1);
+}
+
+.live-pulse-dot.pulse-amber {
+  background: #f59e0b;
+}
+
+.live-pulse-dot.pulse-amber::after {
+  background: #f59e0b;
+}
+
+.live-pulse-dot.pulse-red {
+  background: #ef4444;
+}
+
+.live-pulse-dot.pulse-red::after {
+  background: #ef4444;
+}
+
+@keyframes beaconRingPulse {
+  0% { transform: scale(1); opacity: 0.85; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+
+/* ─── 8. Interactive Table Row Glide & Emerald Border Accent ─── */
+tbody tr {
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  border-left: 3px solid transparent;
+}
+
+tbody tr:hover {
+  transform: translateX(6px);
+  background-color: var(--emerald-light) !important;
+  border-left-color: var(--emerald-primary) !important;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.08);
+}
+
+/* ─── 9. Input & Search Glow Aura ─── */
+.form-control:focus,
+.form-select:focus,
+input[type="text"]:focus,
+input[type="search"]:focus {
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.18),
+              0 0 18px rgba(5, 150, 105, 0.22) !important;
+  border-color: var(--emerald-primary) !important;
+  transform: scale(1.006);
+  transition: all 0.25s ease;
+}
+
+/* ─── 10. Glowing Monsoon Epidemic Banner Animation ─── */
+.monsoon-alert-banner {
+  animation: monsoonGlowPulse 4s infinite alternate ease-in-out;
+  border: 1.5px solid rgba(212, 175, 55, 0.4);
+}
+
+@keyframes monsoonGlowPulse {
+  0% {
+    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.12);
+  }
+  100% {
+    box-shadow: 0 10px 28px rgba(212, 175, 55, 0.35),
+                0 0 16px rgba(16, 185, 129, 0.2);
+  }
+}
+
