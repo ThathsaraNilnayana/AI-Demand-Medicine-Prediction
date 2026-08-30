@@ -2565,8 +2565,19 @@
     let succeeded = 0;
     const confidences = [];
 
-    for (const med of realMeds) {
-      if (aiTrainingCancelled) break;
+    // Bounded-concurrency dispatch, mirroring services/predictionService.js's
+    // regenerateAllPredictions() on the server. Before this change the loop
+    // below awaited one /api/predictions/generate/:id call at a time, so a
+    // full-catalog run only ever kept ONE of the server's pooled ml/predict.py
+    // worker processes busy even though the pool (config.ML_WORKER_COUNT,
+    // default 2) can fit two medicines at once - the client was the
+    // bottleneck, not the ML engine. TRAINING_CONCURRENCY matches that
+    // default so this keeps both pooled workers fed without over-queuing a
+    // free-tier instance; raise it if ML_WORKER_COUNT is raised server-side.
+    const TRAINING_CONCURRENCY = 2;
+
+    async function trainOne(med) {
+      if (aiTrainingCancelled) return;
       statusText.textContent = `Training in progress... (${med.name})`;
 
       try {
@@ -2596,6 +2607,22 @@
       completed++;
       bar.style.width = `${Math.round((completed / realMeds.length) * 100)}%`;
     }
+
+    // while(true) { take next medicine } x TRAINING_CONCURRENCY, same
+    // worker-pool-style pattern as the server's own dispatch loop, so this
+    // stops early on cancel instead of racing ahead of the checked-once
+    // `for` loop it replaces.
+    let nextIndex = 0;
+    async function trainingWorker() {
+      while (!aiTrainingCancelled) {
+        const i = nextIndex++;
+        if (i >= realMeds.length) return;
+        await trainOne(realMeds[i]);
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(TRAINING_CONCURRENCY, realMeds.length) }, () => trainingWorker())
+    );
 
     const meanConfidence = confidences.length ? (confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100 : 0;
     const anyTrained = succeeded > 0;
