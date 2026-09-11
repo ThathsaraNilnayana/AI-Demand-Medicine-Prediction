@@ -185,13 +185,12 @@ async function main() {
     results.users = await migrateTable(sqliteDb, 'users',
         ['user_id', 'username', 'email', 'password_hash', 'role', 'full_name', 'phone',
          'pharmacy_name', 'status', 'failed_login_attempts', 'locked_until',
-         'created_at', 'updated_at', 'rejection_reason'],
+         'created_at', 'updated_at'],
         'user_id');
 
     results.medicines = await migrateTable(sqliteDb, 'medicines',
         ['medicine_id', 'medicine_name', 'generic_name', 'category', 'unit_price',
-         'reorder_level', 'current_stock', 'supplier_id', 'created_at',
-         'dosage', 'manufacturer', 'created_from_upload'],
+         'reorder_level', 'current_stock', 'supplier_id', 'created_at'],
         'medicine_id');
 
     results.sales_data = await migrateTable(sqliteDb, 'sales_data',
