@@ -303,6 +303,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER DEFAULT 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP;
+
+-- Enable Row Level Security on all tables.
+-- Since this backend connects directly via Postgres connection string (bypassing RLS), 
+-- enabling RLS with no policies simply blocks all access from Supabase's public Data API,
+-- securing sensitive data like session_token and passwords.
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE medicines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales_data ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_levels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE predictions ENABLE ROW LEVEL SECURITY;
 `;
 
 const ready = pool.query(SCHEMA_SQL)
