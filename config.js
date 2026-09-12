@@ -21,5 +21,12 @@ module.exports = {
     // (still gets the "import once, not once per medicine" win) if RAM is
     // tight.
     mlWorkerCount: Number(process.env.ML_WORKER_COUNT) || 2,
-    dbPath: require('path').join(__dirname, 'pharmacast.db')
+    dbPath: require('path').join(__dirname, 'pharmacast.db'),
+    
+    // SMTP Configuration
+    smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',
+    smtpPort: Number(process.env.SMTP_PORT) || 587,
+    smtpUser: process.env.SMTP_USER || '',
+    smtpPass: process.env.SMTP_PASS || '',
+    emailFrom: process.env.EMAIL_FROM || 'noreply@pharmacast.lk'
 };

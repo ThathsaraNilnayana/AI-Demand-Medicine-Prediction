@@ -5,6 +5,7 @@ const db = require('../db');
 const config = require('../config');
 const { validate } = require('../middleware/validate');
 const { createSession, destroySession, requireAuth } = require('../middleware/auth');
+const { sendRegistrationEmail } = require('../utils/email');
 
 const router = express.Router();
 const SALT_ROUNDS = 10;
@@ -59,6 +60,11 @@ router.post('/register',
                  VALUES (?, ?, ?, 'pharmacist', ?, ?, ?, 'pending')`,
                 [username, email, passwordHash, full_name || null, phone || null, pharmacy_name || null]
             );
+
+            // Send registration email asynchronously
+            sendRegistrationEmail(email, full_name || username).catch(err => {
+                console.error('Error sending registration email:', err);
+            });
 
             res.json({ id: result.lastID, message: 'Registration successful. Awaiting admin approval.' });
         } catch (err) { next(err); }
