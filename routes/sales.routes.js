@@ -377,6 +377,7 @@ router.post('/upload', requireAuth, requireRole('admin', 'pharmacist'), handleUp
         const createdMedicines = [];
 
         await db.transaction(async () => {
+            // Pass 1: Resolve all medicines and create any that don't exist
             for (const row of validRows) {
                 let medicineId = row.medicine_id;
 
@@ -414,11 +415,28 @@ router.post('/upload', requireAuth, requireRole('admin', 'pharmacist'), handleUp
                         createdMedicines.push({ medicine_id: medicineId, name: row.raw_name, dosage: row.dosage });
                     }
                 }
+                
+                // Save the resolved medicine ID to the row so the batch insert can use it
+                row.resolved_medicine_id = medicineId;
+            }
 
+            // Pass 2: Batch insert into sales_data!
+            // Reduces thousands of network round-trips to Supabase down to just a handful.
+            const BATCH_SIZE = 500;
+            for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
+                const batch = validRows.slice(i, i + BATCH_SIZE);
+                const values = [];
+                const placeholders = [];
+                
+                for (const row of batch) {
+                    placeholders.push('(?, ?, ?, ?, ?)');
+                    values.push(row.resolved_medicine_id, row.quantity_sold, row.sale_date, req.user.id, batchId);
+                }
+                
                 await db.run(`
                     INSERT INTO sales_data (medicine_id, quantity_sold, sale_date, recorded_by, upload_batch)
-                    VALUES (?, ?, ?, ?, ?)
-                `, [medicineId, row.quantity_sold, row.sale_date, req.user.id, batchId]);
+                    VALUES ${placeholders.join(', ')}
+                `, values);
             }
         });
 
