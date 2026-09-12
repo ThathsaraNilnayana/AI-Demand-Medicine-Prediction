@@ -325,9 +325,11 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 /* Below this the labels are dropped and the bar becomes icon-only, which
    is far cleaner than letting five text links fight for space. */
 @media (max-width: 1150px) {
-  .nav-link-item .nav-label { display: none; }
+  .nav-link-item .nav-label,
+  .nav-actions .btn .nav-label { display: none; }
   .nav-link-item { padding: 8px 10px; }
   .nav-link-item i { font-size: 1.05em; opacity: 1; }
+  .nav-actions .btn { padding: 8px 12px; }
 }
 
 @media (max-width: 991px) {
@@ -891,7 +893,7 @@ h1, h2, h3, h4, h5, h6, .font-heading {
    worth sacrificing before the bar starts to feel cramped. */
 @media (max-width: 1150px) {
   .user-role-badge { padding: 3px; gap: 0; }
-  .user-role-badge-text { display: none; }
+  .user-role-badge-text { display: none !important; }
 }
 
 @keyframes userBadgePopIn {
