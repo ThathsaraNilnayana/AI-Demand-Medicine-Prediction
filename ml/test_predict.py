@@ -129,14 +129,14 @@ class TestTierSelection:
         vals = [100 + 5 * i + (10 if i % 3 == 0 else 0) for i in range(n)]
         out = predict.generate_prediction(series_records('2025-01', vals), horizon=6)
         assert out['status'] == 'ok'
-        assert out['model_type'] == 'Linear Regression'
+        assert out['model_type'] == 'ElasticNet Regression'
 
     @pytest.mark.parametrize('n', [12, 18, 23])
     def test_tier2_sarima(self, n):
         vals = [100 + 20 * np.sin(2 * np.pi * i / 12) + i for i in range(n)]
         out = predict.generate_prediction(series_records('2024-01', vals), horizon=6)
         assert out['status'] == 'ok'
-        assert out['model_type'].startswith('SARIMA')
+        assert 'SARIMA' in out['model_type']
         assert 'STL' not in out['model_type'], 'STL is reserved for the 24+ tier'
 
     def test_tier3_sarima_stl(self):

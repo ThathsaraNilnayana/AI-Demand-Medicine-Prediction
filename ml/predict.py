@@ -203,24 +203,16 @@ def _fit_tier1(series, horizon):
     """
     Tier 1: regularized linear regression with trend + Fourier seasonality.
 
-    Still 'Linear Regression' per SDS Table 9, but Ridge-penalised and with
+    Still 'Linear Regression' per SDS Table 9, but ElasticNet-penalised and with
     the seasonal basis sized to the data (n // 4 harmonics, capped at 2) so
     the number of parameters stays well under the number of observations.
 
-    The penalty strength is chosen by leave-one-out cross-validation
-    (RidgeCV) instead of a fixed alpha=1.0, which had no particular
-    justification for every series length/shape at once. Measured in a
-    120-run rolling-origin comparison (30 seeds x 4 synthetic scenarios)
-    against the fixed alpha=1.0 this replaces: a ~11% lower mean backtest
-    sMAPE overall (12.4 -> 11.1), driven mainly by a clean-trend scenario
-    where the fixed alpha over-regularized and RidgeCV won 30/30 runs
-    (18.2 -> 11.9 sMAPE); on noisy/seasonal scenarios the two were close to a
-    wash (within backtest noise either direction). No scenario got
-    meaningfully worse. RidgeCV's efficient LOO path (the sklearn default
-    when cv=None) is exact and O(n) here - negligible added cost at these
-    series lengths (n <= 11).
+    The penalty strength and L1 ratio are chosen by cross-validation
+    (ElasticNetCV). This allows the model to perform automatic feature selection,
+    dropping Fourier terms entirely (via the L1 penalty) if the series has no
+    measurable seasonality, which prevents overfitting on short histories.
     """
-    from sklearn.linear_model import RidgeCV
+    from sklearn.linear_model import ElasticNetCV
     from sklearn.preprocessing import StandardScaler
 
     y_raw = series.values.astype(float)
@@ -234,8 +226,10 @@ def _fit_tier1(series, horizon):
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X)
 
+    # ElasticNetCV searches both the overall penalty strength (alphas) and the
+    # mix between L1/L2 penalties (l1_ratio). A ratio of 1.0 is pure Lasso (L1).
     alphas = np.logspace(-2, 3, 12)
-    model = RidgeCV(alphas=alphas)
+    model = ElasticNetCV(alphas=alphas, l1_ratio=[0.1, 0.5, 0.9, 1.0], cv=min(n, 5))
     model.fit(Xs, y)
 
     future_periods = [series.index[-1] + i for i in range(1, horizon + 1)]
@@ -252,7 +246,7 @@ def _fit_tier1(series, horizon):
     damping = 0.85 ** np.arange(1, horizon + 1)
     preds = recent_level + (preds - recent_level) * damping
 
-    return np.clip(preds, 0, None), 'Linear Regression'
+    return np.clip(preds, 0, None), 'ElasticNet Regression'
 
 
 def _aicc(fitted, n_obs, n_params):
@@ -357,6 +351,27 @@ def _fit_tier2(series, horizon, use_stl=False):
         except Exception:
             preds = np.full(horizon, float(np.mean(y[-min(6, n):])))
             model_type += ' (fallback)'
+
+    # Ensemble with Holt-Winters Exponential Smoothing
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    hw_preds = None
+    try:
+        # If use_stl is True, y is already deseasonalized, so don't fit seasonality again.
+        if seasonal_ok and not use_stl:
+            hw_model = ExponentialSmoothing(y, trend='add', seasonal='add', seasonal_periods=12, initialization_method="estimated")
+        else:
+            hw_model = ExponentialSmoothing(y, trend='add', initialization_method="estimated")
+            
+        hw_fit = hw_model.fit()
+        hw_preds = np.asarray(hw_fit.forecast(horizon), dtype=float)
+        if not np.all(np.isfinite(hw_preds)):
+            hw_preds = None
+    except Exception:
+        hw_preds = None
+
+    if hw_preds is not None:
+        preds = (preds + hw_preds) / 2.0
+        model_type = model_type.replace('SARIMA', 'Ensemble (SARIMA + Holt-Winters)')
 
     if use_stl and seasonal_ok:
         # Re-attach the seasonal shape. The last 12 seasonal values align so
