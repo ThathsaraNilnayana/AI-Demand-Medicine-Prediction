@@ -8,7 +8,7 @@ const { createSession, destroySession, requireAuth } = require('../middleware/au
 const { sendRegistrationEmail } = require('../utils/email');
 
 const router = express.Router();
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 5;
 
 // ==================== REGISTER (FR1-7) ====================
 router.post('/register',

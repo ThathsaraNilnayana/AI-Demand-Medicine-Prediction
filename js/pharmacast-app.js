@@ -1017,7 +1017,7 @@
       setTimeout(() => {
         activePage.style.display = 'none';
         showNewPage();
-      }, 350);
+      }, 150);
     } else {
       showNewPage();
     }
