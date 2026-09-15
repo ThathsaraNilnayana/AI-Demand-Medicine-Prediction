@@ -980,44 +980,47 @@
       }
     }
 
-    const pages = document.querySelectorAll('.page-view');
-    pages.forEach(p => {
-      p.classList.remove('active-page');
-    });
-
-    if (target) {
-      target.classList.add('active-page');
+    const activePage = document.querySelector('.page-view.active-page');
+    
+    if (activePage && activePage.id === pageId) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
 
-    updateNavbarState();
-    triggerAnimateNumbers();
+    function showNewPage() {
+      if (target) {
+        target.style.display = 'block';
+        void target.offsetWidth;
+        target.classList.add('active-page');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
 
-    // Re-render specific views if opened
-    if (pageId === 'page-pharmacist-dashboard') {
-      renderPharmacistDashboard();
-    } else if (pageId === 'page-admin-dashboard') {
-      renderAdminDashboard();
-    } else if (pageId === 'page-admin-approvals') {
-      renderPendingApprovalsTable();
-      renderAllUsersTable();
-    } else if (pageId === 'page-admin-upload') {
-      renderSalesFilesTable();
-    } else if (pageId === 'page-admin-medicines') {
-      renderManageMedicinesTable();
-    } else if (pageId === 'page-pharmacist-medicines') {
-      renderPharmacistMedicinesTable();
-    } else if (pageId === 'page-stock-overview') {
-      renderStockOverviewTable();
-    } else if (pageId === 'page-forecasts-overview') {
-      renderForecastsOverviewTable();
-    } else if (pageId === 'page-search') {
-      focusSearchPageInput();
+      updateNavbarState();
+      triggerAnimateNumbers();
+
+      if (pageId === 'page-pharmacist-dashboard') renderPharmacistDashboard();
+      else if (pageId === 'page-admin-dashboard') renderAdminDashboard();
+      else if (pageId === 'page-admin-approvals') { renderPendingApprovalsTable(); renderAllUsersTable(); }
+      else if (pageId === 'page-admin-upload') renderSalesFilesTable();
+      else if (pageId === 'page-admin-medicines') renderManageMedicinesTable();
+      else if (pageId === 'page-pharmacist-medicines') renderPharmacistMedicinesTable();
+      else if (pageId === 'page-stock-overview') renderStockOverviewTable();
+      else if (pageId === 'page-forecasts-overview') renderForecastsOverviewTable();
+      else if (pageId === 'page-search') focusSearchPageInput();
+
+      if (typeof syncActiveNavItem === 'function') syncActiveNavItem(pageId);
     }
 
-    // Keep the iOS segmented control in sync with the page actually shown,
-    // including navigations that didn't originate from a nav tap.
-    if (typeof syncActiveNavItem === 'function') syncActiveNavItem(pageId);
+    if (activePage) {
+      activePage.classList.remove('active-page');
+      // Wait for the old page to fully fade out before showing the new one
+      setTimeout(() => {
+        activePage.style.display = 'none';
+        showNewPage();
+      }, 350);
+    } else {
+      showNewPage();
+    }
   }
 
   // The upload page is shared by both roles now, so its "Back" button can't

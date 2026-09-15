@@ -1001,7 +1001,7 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 /* ─── Page Transitions & Micro-Animations ─── */
 .page-view {
-  display: none;
+  display: none; /* keep this as default so we don't have FOUC if JS is slow */
   opacity: 0;
   transform: translateY(14px);
   transition: opacity 0.35s ease-out, transform 0.35s ease-out;
