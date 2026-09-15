@@ -4532,6 +4532,12 @@
       } else {
         renderPharmacistDashboard();
       }
+    }).finally(() => {
+      const preloader = document.getElementById('pharmacast-preloader');
+      if (preloader) {
+        preloader.style.opacity = '0';
+        preloader.style.visibility = 'hidden';
+      }
     });
   });
 
