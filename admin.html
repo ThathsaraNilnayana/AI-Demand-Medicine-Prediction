@@ -39,9 +39,9 @@
     </div>
   </div>
 
-  <!-- Animated Botanical Aurora Background with DNA Video Vibe -->
+  <!-- Custom Vanilla JS DNA Canvas Background -->
   <div id="video-bg" class="botanical-aurora-bg">
-    <iframe src="https://www.youtube.com/embed/r087k01e52Y?autoplay=1&mute=1&loop=1&playlist=r087k01e52Y&controls=0&showinfo=0&autohide=1&modestbranding=1" frameborder="0" allow="autoplay; fullscreen" style="position: absolute; top: 50%; left: 50%; width: 100vw; height: 56.25vw; min-height: 100vh; min-width: 177.77vh; transform: translate(-50%, -50%); pointer-events: none; opacity: 0.25;"></iframe>
+    <canvas id="dna-canvas" style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -10; opacity: 0.6; pointer-events: none;"></canvas>
   </div>
   <!-- Animated Ambient Floating Botanical Particles -->
   <div id="ambient-particles-container" class="ambient-particles-container"></div>
@@ -588,6 +588,73 @@
 
   <!-- Core App Logic & ML Forecasting Engine (shared with index.html) -->
   <script src="js/pharmacast-app.js?v=20260827b"></script>
+
+  <!-- Custom DNA Canvas Animation -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const canvas = document.getElementById('dna-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let width, height;
+      function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      let time = 0;
+      function draw() {
+        ctx.clearRect(0, 0, width, height);
+        time += 0.015; // Speed of rotation
+        const numPoints = 90; // Number of base pairs
+        const strandSpacing = height / numPoints;
+        const amplitude = width > 800 ? 300 : width * 0.35; // Width of the helix
+        
+        for (let i = 0; i < numPoints; i++) {
+          const y = i * strandSpacing;
+          const wavePhase = time + i * 0.15; // Twist tightness
+
+          // Strand 1 (Front/Back)
+          const x1 = width / 2 + Math.sin(wavePhase) * amplitude;
+          const z1 = Math.cos(wavePhase);
+          
+          // Strand 2 (Opposite)
+          const x2 = width / 2 + Math.sin(wavePhase + Math.PI) * amplitude;
+          const z2 = Math.cos(wavePhase + Math.PI);
+          
+          // Depth perception (alpha & size)
+          const alpha1 = (z1 + 1.2) / 2.2 * 0.8 + 0.1;
+          const alpha2 = (z2 + 1.2) / 2.2 * 0.8 + 0.1;
+          
+          const size1 = (z1 + 1.5) * 2.5;
+          const size2 = (z2 + 1.5) * 2.5;
+
+          // Draw connection line
+          ctx.beginPath();
+          ctx.moveTo(x1, y);
+          ctx.lineTo(x2, y);
+          ctx.strokeStyle = `rgba(5, 150, 105, ${Math.min(alpha1, alpha2) * 0.4})`;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Draw dot 1
+          ctx.beginPath();
+          ctx.arc(x1, y, size1, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(5, 150, 105, ${alpha1})`;
+          ctx.fill();
+
+          // Draw dot 2
+          ctx.beginPath();
+          ctx.arc(x2, y, size2, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(16, 185, 129, ${alpha2})`;
+          ctx.fill();
+        }
+        requestAnimationFrame(draw);
+      }
+      draw();
+    });
+  </script>
 
 </body>
 </html>
