@@ -36,7 +36,7 @@ app.use(express.json());
 // The HTML shells must never be served from cache without checking first -
 // they are what point at the current asset versions.
 const sendHtml = (file) => (req, res) => {
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.sendFile(path.join(__dirname, file));
 };
 app.get('/', sendHtml('index.html'));
