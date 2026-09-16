@@ -324,7 +324,7 @@ class TestSeasonalPreservation:
 
 class TestRollingOriginBacktest:
     def test_returns_none_when_too_short(self):
-        s, _ = predict.build_series(series_records('2025-01', [10] * 6))
+        s, _ = predict.build_series(series_records('2025-01', [10] * 3))
         out = predict.rolling_origin_backtest(s)
         assert out['smape'] is None, 'no room to hold out below the minimum'
         assert out['mae'] is None

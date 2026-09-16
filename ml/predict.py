@@ -357,7 +357,8 @@ def _fit_tier2(series, horizon, use_stl=False):
     hw_preds = None
     try:
         # If use_stl is True, y is already deseasonalized, so don't fit seasonality again.
-        if seasonal_ok and not use_stl:
+        # ExponentialSmoothing with seasonal='add' requires at least 2 full cycles (24 periods).
+        if seasonal_ok and not use_stl and len(y) >= 24:
             hw_model = ExponentialSmoothing(y, trend='add', seasonal='add', seasonal_periods=12, initialization_method="estimated")
         else:
             hw_model = ExponentialSmoothing(y, trend='add', initialization_method="estimated")
@@ -538,7 +539,7 @@ def _shrinkage_weight(series, cache=None):
 
     for k in range(1, max_folds + 1):
         cutoff = n - k
-        if cutoff < MIN_MONTHS:
+        if cutoff < 3:
             break
         train = series.iloc[:cutoff]
         actual = series.iloc[cutoff:cutoff + 1].values
@@ -639,7 +640,7 @@ def rolling_origin_backtest(series, max_folds=None, weight=None, cache=None):
     pairs = []  # (actual, predicted) for each successful fold
     for k in range(1, max_folds + 1):
         cutoff = n - k
-        if cutoff < MIN_MONTHS:
+        if cutoff < 3:
             break
         train = series.iloc[:cutoff]
         actual = series.iloc[cutoff:cutoff + 1].values
