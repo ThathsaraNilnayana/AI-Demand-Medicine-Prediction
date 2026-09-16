@@ -640,7 +640,7 @@ def rolling_origin_backtest(series, max_folds=None, weight=None, cache=None):
     pairs = []  # (actual, predicted) for each successful fold
     for k in range(1, max_folds + 1):
         cutoff = n - k
-        if cutoff < 3:
+        if cutoff < 2:
             break
         train = series.iloc[:cutoff]
         actual = series.iloc[cutoff:cutoff + 1].values
