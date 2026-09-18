@@ -4492,7 +4492,29 @@
     }
   }
 
+  function initBackToTopButton() {
+    const btn = document.createElement('button');
+    btn.id = 'back-to-top-btn';
+    btn.innerHTML = '<i class="bi bi-arrow-up"></i>';
+    btn.className = 'btn btn-luxury-primary rounded-circle shadow-lg';
+    btn.setAttribute('aria-label', 'Back to top');
+    document.body.appendChild(btn);
+
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 300) {
+        btn.classList.add('show');
+      } else {
+        btn.classList.remove('show');
+      }
+    });
+
+    btn.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    initBackToTopButton();
     initAmbientParticles();
     initCursorGlowAura();
     initClickRippleEffect();
