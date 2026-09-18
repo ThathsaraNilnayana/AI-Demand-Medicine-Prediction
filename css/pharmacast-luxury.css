@@ -1382,7 +1382,7 @@ input[type="search"]:focus {
 #back-to-top-btn {
   position: fixed;
   bottom: 30px;
-  right: 30px;
+  left: 30px;
   width: 50px;
   height: 50px;
   z-index: 9999;
