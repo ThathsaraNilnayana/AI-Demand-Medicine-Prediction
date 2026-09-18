@@ -1115,7 +1115,7 @@
 
     const welcomeHeading = document.getElementById('pharm-welcome-heading');
     if (welcomeHeading) {
-      welcomeHeading.textContent = currentUser ? `Ayubowan, ${currentUser.fullName}!` : 'Ayubowan!';
+      welcomeHeading.textContent = currentUser ? `Welcome, ${currentUser.fullName}!` : 'Welcome!';
     }
     const welcomeDate = document.getElementById('pharm-welcome-date');
     if (welcomeDate) {
