@@ -116,7 +116,7 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   border-radius: 50%;
   filter: blur(100px);
   opacity: 0.55;
-  animation: auroraFloat 16s ease-in-out infinite alternate;
+  animation: auroraFloat 40s ease-in-out infinite alternate;
 }
 
 .botanical-aurora-bg::before {
@@ -133,7 +133,7 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   background: radial-gradient(circle, #38bdf8 0%, transparent 70%);
   bottom: -100px;
   right: -60px;
-  animation-duration: 20s;
+  animation-duration: 50s;
   animation-delay: -5s;
 }
 
