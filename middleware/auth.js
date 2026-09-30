@@ -1,3 +1,9 @@
+// ============================================================
+// Owner: A.G.T.N. Bandara (ASP/2022/141)
+// Responsibility: FR12–FR19 — Authentication & Security Management
+// Team: BitBenders — PharmaCast (AI-Based Medicine Demand Prediction System)
+// ============================================================
+
 const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');

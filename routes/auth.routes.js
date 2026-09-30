@@ -72,6 +72,12 @@ router.post('/register',
 );
 
 // ==================== LOGIN (FR12-16) ====================
+// ============================================================
+// Owner: A.G.T.N. Bandara (ASP/2022/141)
+// Responsibility: FR12–FR19 — Authentication & Security Management
+// Team: BitBenders — PharmaCast (AI-Based Medicine Demand Prediction System)
+// ============================================================
+
 router.post('/login',
     [
         body('username').notEmpty().withMessage('Username is required'),
@@ -309,6 +315,12 @@ router.post('/change-password',
 );
 
 // ==================== LOGOUT (FR19) ====================
+// ============================================================
+// Owner: A.G.T.N. Bandara (ASP/2022/141)
+// Responsibility: FR12–FR19 — Authentication & Security Management
+// Team: BitBenders — PharmaCast (AI-Based Medicine Demand Prediction System)
+// ============================================================
+
 router.post('/logout', requireAuth, async (req, res, next) => {
     try {
         await destroySession(req.user.token);
