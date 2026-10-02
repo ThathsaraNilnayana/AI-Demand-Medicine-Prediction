@@ -519,24 +519,49 @@
     }
     const months = Array.from(totals.keys()).sort();
     const last12 = months.slice(-12);
-    return last12.map((m) => Math.round(totals.get(m)));
+    return last12.map((m) => ({ month: m, quantity: Math.round(totals.get(m)) }));
   }
 
   /** Converts the real backend's prediction shape into the object
    *  renderPredictionChart() / the diagnostics panel already know how to render
    *  (same field names computeDemandPrediction() used to produce locally). */
   function adaptServerPrediction(forecast, modelType, historicalRef) {
-    const predicted = forecast.map((f) => f.predicted_demand);
-    const months = forecast.map((f) => formatMonthLabel(f.month));
-    const averagePredicted = Math.round(predicted.reduce((a, b) => a + b, 0) / (predicted.length || 1));
+    let combinedMonths = [];
+    let predictedData = [];
+    let historicalData = [];
+
+    if (historicalRef && historicalRef.length > 0) {
+      for (let i = 0; i < historicalRef.length; i++) {
+        combinedMonths.push(formatMonthLabel(historicalRef[i].month));
+        historicalData.push(historicalRef[i].quantity);
+        if (i === historicalRef.length - 1) {
+          predictedData.push(historicalRef[i].quantity);
+        } else {
+          predictedData.push(null);
+        }
+      }
+    }
+
+    const futurePredicted = forecast.map((f) => f.predicted_demand);
+    for (const f of forecast) {
+      combinedMonths.push(formatMonthLabel(f.month));
+      historicalData.push(null);
+      predictedData.push(f.predicted_demand);
+    }
+
+    if (!historicalRef || historicalRef.length === 0) {
+      historicalData = predictedData.map(() => null);
+    }
+
+    const averagePredicted = Math.round(futurePredicted.reduce((a, b) => a + b, 0) / (futurePredicted.length || 1));
     const avgConfidence = forecast.reduce((a, f) => a + (f.confidence_score || 0), 0) / (forecast.length || 1);
 
     return {
       status: "SUCCESS",
       modelName: modelType || "AI Forecast Model",
-      months,
-      predicted,
-      historicalRef: historicalRef && historicalRef.length ? historicalRef : predicted.map(() => null),
+      months: combinedMonths,
+      predicted: predictedData,
+      historicalRef: historicalData,
       averagePredicted,
       rSquare: `${(avgConfidence * 100).toFixed(1)}%`,
       rmse: "See confidence score",
@@ -787,6 +812,7 @@
 
       for (let i = 0; i < count; i++) {
         const val = predicted[i];
+        if (val === null || val === undefined) continue;
         let fillColor = 'rgba(209, 250, 229, 0.45)'; // default green
 
         if (val > highThresh) {
