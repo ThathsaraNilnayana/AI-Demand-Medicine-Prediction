@@ -534,9 +534,8 @@
     for (const f of forecast) {
       const parts = f.month.split('-');
       const m = parts[1];
-      const monthName = MONTH_NAMES[parseInt(m, 10) - 1].slice(0, 3);
       
-      combinedMonths.push(monthName);
+      combinedMonths.push(formatMonthLabel(f.month));
       predictedData.push(f.predicted_demand);
 
       // Align historical data by matching the same calendar month
