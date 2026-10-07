@@ -526,24 +526,38 @@
    *  renderPredictionChart() / the diagnostics panel already know how to render
    *  (same field names computeDemandPrediction() used to produce locally). */
   function adaptServerPrediction(forecast, modelType, historicalRef) {
-    const combinedMonths = [];
-    const predictedData = [];
-    const historicalData = [];
+    let combinedMonths = [];
+    let predictedData = [];
+    let historicalData = [];
 
-    // The X-axis represents the 12 forecast months.
-    for (const f of forecast) {
-      const parts = f.month.split('-');
-      const m = parts[1];
-      
-      combinedMonths.push(formatMonthLabel(f.month));
-      predictedData.push(f.predicted_demand);
-
-      // Align historical data by matching the same calendar month
-      const histMatch = historicalRef ? historicalRef.find(h => h.month.endsWith('-' + m)) : null;
-      historicalData.push(histMatch ? histMatch.quantity : null);
+    // Append historical months first
+    if (historicalRef && historicalRef.length > 0) {
+      for (let i = 0; i < historicalRef.length; i++) {
+        combinedMonths.push(formatMonthLabel(historicalRef[i].month));
+        historicalData.push(historicalRef[i].quantity);
+        
+        // The connector point: append the last historical point to the predicted array
+        // so the lines visually connect without a gap.
+        if (i === historicalRef.length - 1) {
+          predictedData.push(historicalRef[i].quantity);
+        } else {
+          predictedData.push(null);
+        }
+      }
     }
 
+    // Append future predicted months
     const futurePredicted = forecast.map((f) => f.predicted_demand);
+    for (const f of forecast) {
+      combinedMonths.push(formatMonthLabel(f.month));
+      historicalData.push(null);
+      predictedData.push(f.predicted_demand);
+    }
+
+    if (!historicalRef || historicalRef.length === 0) {
+      historicalData = predictedData.map(() => null);
+    }
+
     const averagePredicted = Math.round(futurePredicted.reduce((a, b) => a + b, 0) / (futurePredicted.length || 1));
     const avgConfidence = forecast.reduce((a, f) => a + (f.confidence_score || 0), 0) / (forecast.length || 1);
 
@@ -875,8 +889,19 @@
             },
             pointBorderColor: '#ffffff',
             pointBorderWidth: 2,
-            pointRadius: 6,
-            pointHoverRadius: 9,
+            pointRadius: function(context) {
+              const histVal = predictionResult.historicalRef[context.dataIndex];
+              const predVal = context.raw;
+              // Hide the connector dot (where both history and prediction have a value)
+              if (histVal !== null && predVal !== null) return 0;
+              return 6;
+            },
+            pointHoverRadius: function(context) {
+              const histVal = predictionResult.historicalRef[context.dataIndex];
+              const predVal = context.raw;
+              if (histVal !== null && predVal !== null) return 0;
+              return 9;
+            },
             fill: true,
             tension: 0.35,
             order: 1
@@ -915,6 +940,16 @@
             bodyFont: { family: 'Inter', size: 13 },
             padding: 12,
             cornerRadius: 10,
+            filter: function(tooltipItem) {
+              // Hide the connector point from the prediction tooltip
+              if (tooltipItem.datasetIndex === 0) {
+                const histVal = predictionResult.historicalRef[tooltipItem.dataIndex];
+                if (histVal !== null && tooltipItem.raw !== null) {
+                  return false;
+                }
+              }
+              return true;
+            },
             callbacks: {
               afterLabel: function (context) {
                 if (context.datasetIndex === 0) {
