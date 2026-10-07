@@ -902,6 +902,8 @@
             }
           },
           tooltip: {
+            mode: 'index',
+            intersect: false,
             backgroundColor: 'rgba(15, 23, 42, 0.92)',
             titleFont: { family: 'Outfit', size: 14, weight: '700' },
             bodyFont: { family: 'Inter', size: 13 },
