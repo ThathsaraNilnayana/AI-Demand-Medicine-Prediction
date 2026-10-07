@@ -530,22 +530,31 @@
     const predictedData = [];
     const historicalData = [];
 
-    // The X-axis represents the 12 calendar months of the forecast, 
-    // but labeled with the historical year so the Actual line doesn't plot into the future.
-    for (const f of forecast) {
-      const parts = f.month.split('-');
-      const y = parseInt(parts[0], 10);
-      const m = parts[1];
-      
-      const historicalYear = y - 1;
-      const monthName = `${MONTH_NAMES[parseInt(m, 10) - 1].slice(0, 3)} ${historicalYear}`;
-      
-      combinedMonths.push(monthName);
-      predictedData.push(f.predicted_demand);
+    // 1. Plot the chronological historical months FIRST
+    if (historicalRef && historicalRef.length > 0) {
+      for (let i = 0; i < historicalRef.length; i++) {
+        combinedMonths.push(formatMonthLabel(historicalRef[i].month));
+        historicalData.push(historicalRef[i].quantity);
+        
+        // Connector point: to make the line continuous, the green line starts exactly
+        // where the historical line ends.
+        if (i === historicalRef.length - 1) {
+          predictedData.push(historicalRef[i].quantity);
+        } else {
+          predictedData.push(null);
+        }
+      }
+    }
 
-      // Align historical data by matching the same calendar month
-      const histMatch = historicalRef ? historicalRef.find(h => h.month.endsWith('-' + m)) : null;
-      historicalData.push(histMatch ? histMatch.quantity : null);
+    // 2. Plot the chronological future predicted months NEXT
+    for (const f of forecast) {
+      combinedMonths.push(formatMonthLabel(f.month));
+      historicalData.push(null);
+      predictedData.push(f.predicted_demand);
+    }
+
+    if (!historicalRef || historicalRef.length === 0) {
+      historicalData = predictedData.map(() => null);
     }
 
     const futurePredicted = forecast.map((f) => f.predicted_demand);
@@ -865,7 +874,7 @@
         labels: predictionResult.months,
         datasets: [
           {
-            label: 'AI Predicted Demand (Upcoming Year)',
+            label: 'AI Predicted Demand (Trend Line)',
             data: predictionResult.predicted,
             borderColor: '#059669',
             backgroundColor: gradient,
@@ -880,8 +889,19 @@
             },
             pointBorderColor: '#ffffff',
             pointBorderWidth: 2,
-            pointRadius: 6,
-            pointHoverRadius: 9,
+            pointRadius: function(context) {
+              const histVal = predictionResult.historicalRef[context.dataIndex];
+              const predVal = context.raw;
+              // Completely hide the connector dot so there are exactly 12 visual forecast dots
+              if (histVal !== null && predVal !== null) return 0;
+              return 6;
+            },
+            pointHoverRadius: function(context) {
+              const histVal = predictionResult.historicalRef[context.dataIndex];
+              const predVal = context.raw;
+              if (histVal !== null && predVal !== null) return 0;
+              return 9;
+            },
             fill: true,
             tension: 0.35,
             order: 1
@@ -920,6 +940,16 @@
             bodyFont: { family: 'Inter', size: 13 },
             padding: 12,
             cornerRadius: 10,
+            filter: function(tooltipItem) {
+              // Hide the connector point from the prediction tooltip so it doesn't count as a forecast point
+              if (tooltipItem.datasetIndex === 0) {
+                const histVal = predictionResult.historicalRef[tooltipItem.dataIndex];
+                if (histVal !== null && tooltipItem.raw !== null) {
+                  return false;
+                }
+              }
+              return true;
+            },
             callbacks: {
               afterLabel: function (context) {
                 if (context.datasetIndex === 0) {
