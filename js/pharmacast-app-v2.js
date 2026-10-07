@@ -534,11 +534,7 @@
       for (let i = 0; i < historicalRef.length; i++) {
         combinedMonths.push(formatMonthLabel(historicalRef[i].month));
         historicalData.push(historicalRef[i].quantity);
-        if (i === historicalRef.length - 1) {
-          predictedData.push(historicalRef[i].quantity);
-        } else {
-          predictedData.push(null);
-        }
+        predictedData.push(null);
       }
     }
 
@@ -759,10 +755,18 @@
       return null;
     }
 
-    // Use next month (e.g. August = month index 7) as target forecast
-    const nextMonthIndex = 7; // August
-    const nextMonthName = "August 2026";
-    const predictedDemand = predictionResult.predicted[nextMonthIndex] || predictionResult.averagePredicted;
+    // Use first forecasted month as target forecast
+    let predictedDemand = predictionResult.averagePredicted;
+    let nextMonthName = "Next Month";
+    
+    // Find the first forecasted month (first non-null in predicted)
+    for (let i = 0; i < predictionResult.predicted.length; i++) {
+        if (predictionResult.predicted[i] !== null) {
+            predictedDemand = predictionResult.predicted[i];
+            nextMonthName = predictionResult.months[i];
+            break;
+        }
+    }
     const safetyStock = Math.round(predictedDemand * 0.20);
     const totalRequired = predictedDemand + safetyStock;
     const currentStock = med.stock;
@@ -866,7 +870,14 @@
             borderColor: '#059669',
             backgroundColor: gradient,
             borderWidth: 3.5,
-            pointBackgroundColor: '#d4af37',
+            pointBackgroundColor: function(context) {
+              const val = context.raw;
+              if (val == null) return '#d4af37';
+              const avg = predictionResult.averagePredicted;
+              if (val > avg * 1.15) return '#ef4444';
+              if (val >= avg * 0.90) return '#eab308';
+              return '#10b981';
+            },
             pointBorderColor: '#ffffff',
             pointBorderWidth: 2,
             pointRadius: 6,
@@ -914,12 +925,19 @@
                 if (context.datasetIndex === 0) {
                   const val = context.raw;
                   const avg = predictionResult.averagePredicted;
+                  if (val == null) return;
                   if (val > avg * 1.15) {
-                    return '⚡ High Demand Month (Monsoon Flu Alert)';
+                    const label = context.chart.data.labels[context.dataIndex];
+                    const monsoonMonths = ['May', 'Jun', 'Jul', 'Oct', 'Nov', 'Dec'];
+                    const isMonsoon = monsoonMonths.some(m => label.startsWith(m));
+                    if (isMonsoon) {
+                        return '⚡ High Demand (>115%) (Monsoon Fever Peak)';
+                    }
+                    return '⚡ High Demand (>115%)';
                   } else if (val < avg * 0.90) {
-                    return '✓ Low Demand Month (Safe Inventory)';
+                    return '✓ Low Demand Month (<90%) (Safe Inventory)';
                   } else {
-                    return '• Moderate Standard Demand';
+                    return '• Moderate Standard Demand (90%-115%)';
                   }
                 }
               }

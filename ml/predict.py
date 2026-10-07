@@ -146,7 +146,8 @@ def build_series(monthly_data):
     months_observed = int(len(grouped))
 
     full_index = pd.period_range(grouped.index.min(), grouped.index.max(), freq='M')
-    series = grouped.reindex(full_index, fill_value=0.0).astype(float)
+    series = grouped.reindex(full_index)
+    series = series.interpolate(method='linear').fillna(0.0).astype(float)
     return series, months_observed
 
 
@@ -201,52 +202,27 @@ def _seasonal_features(periods, n_harmonics):
 
 def _fit_tier1(series, horizon):
     """
-    Tier 1: regularized linear regression with trend + Fourier seasonality.
-
-    Still 'Linear Regression' per SDS Table 9, but ElasticNet-penalised and with
-    the seasonal basis sized to the data (n // 4 harmonics, capped at 2) so
-    the number of parameters stays well under the number of observations.
-
-    The penalty strength and L1 ratio are chosen by cross-validation
-    (ElasticNetCV). This allows the model to perform automatic feature selection,
-    dropping Fourier terms entirely (via the L1 penalty) if the series has no
-    measurable seasonality, which prevents overfitting on short histories.
+    Tier 1: Simple trend-only Linear Regression for < 24 months.
     """
-    from sklearn.linear_model import ElasticNetCV
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import LinearRegression
 
     y_raw = series.values.astype(float)
     y = winsorize(y_raw)
     n = len(y)
 
-    n_harmonics = int(np.clip(n // 4, 0, 2))
     t = np.arange(n, dtype=float).reshape(-1, 1)
-    X = np.hstack([t, _seasonal_features(series.index, n_harmonics)])
+    
+    model = LinearRegression()
+    model.fit(t, y)
 
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X)
+    future_periods = np.arange(n, n + horizon, dtype=float).reshape(-1, 1)
+    preds = model.predict(future_periods).flatten()
 
-    # ElasticNetCV searches both the overall penalty strength (alphas) and the
-    # mix between L1/L2 penalties (l1_ratio). A ratio of 1.0 is pure Lasso (L1).
-    alphas = np.logspace(-2, 3, 12)
-    model = ElasticNetCV(alphas=alphas, l1_ratio=[0.1, 0.5, 0.9, 1.0], cv=min(n, 5))
-    model.fit(Xs, y)
-
-    future_periods = [series.index[-1] + i for i in range(1, horizon + 1)]
-    Xf = np.hstack([
-        np.arange(n, n + horizon, dtype=float).reshape(-1, 1),
-        _seasonal_features(future_periods, n_harmonics),
-    ])
-    preds = model.predict(scaler.transform(Xf))
-
-    # Short histories carry no information about a long-run trend, so an
-    # unconstrained slope extrapolates absurdly by month 12. Damp it toward
-    # the recent mean the further out we forecast.
     recent_level = float(np.mean(y[-min(3, n):]))
     damping = 0.85 ** np.arange(1, horizon + 1)
     preds = recent_level + (preds - recent_level) * damping
 
-    return np.clip(preds, 0, None), 'ElasticNet Regression'
+    return np.clip(preds, 0, None), 'Linear Regression (Trend Only)'
 
 
 def _aicc(fitted, n_obs, n_params):
@@ -494,10 +470,8 @@ def _raw_tier_forecast(series, horizon, cache=None):
         return cache[key]
 
     n = len(series)
-    if n < TIER2_MONTHS:
+    if n < 24:
         result = _fit_tier1(series, horizon)
-    elif n < TIER3_MONTHS:
-        result = _fit_tier2(series, horizon, use_stl=False)
     else:
         result = _fit_tier2(series, horizon, use_stl=True)
 
@@ -535,7 +509,7 @@ def _shrinkage_weight(series, cache=None):
     # (a more reliable weight exactly where the data is noisiest) while
     # 12+ month series keep the original fold count so the SARIMA/STL tiers
     # don't get materially slower to regenerate.
-    max_folds = 5 if n < TIER2_MONTHS else 3
+    max_folds = 5 if n < 24 else 3
 
     for k in range(1, max_folds + 1):
         cutoff = n - k
@@ -636,7 +610,7 @@ def rolling_origin_backtest(series, max_folds=None, weight=None, cache=None):
     """
     n = len(series)
     if max_folds is None:
-        max_folds = 5 if n < TIER2_MONTHS else 3
+        max_folds = 5 if n < 24 else 3
     pairs = []  # (actual, predicted) for each successful fold
     for k in range(1, max_folds + 1):
         cutoff = n - k
@@ -735,6 +709,23 @@ def generate_prediction(monthly_data, horizon=12):
     mae_value = backtest['mae']
     accuracy_value = backtest['accuracy']
     future_months = next_months(series.index[-1], horizon)
+
+    historical_min = float(np.min(series.values))
+    historical_max = float(np.max(series.values))
+    margin = (historical_max - historical_min) * 0.2
+    clamp_min = max(0.0, historical_min - margin)
+    clamp_max = historical_max + margin
+
+    has_clamped = False
+    clamped_preds = []
+    for p in preds:
+        if p > clamp_max or p < clamp_min:
+            has_clamped = True
+        clamped_preds.append(np.clip(p, clamp_min, clamp_max))
+    
+    preds = np.array(clamped_preds)
+    if has_clamped and "(Clamped)" not in model_type:
+        model_type += " (Clamped)"
 
     forecast = []
     for i, (m, p) in enumerate(zip(future_months, preds)):
