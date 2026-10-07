@@ -534,7 +534,11 @@
       for (let i = 0; i < historicalRef.length; i++) {
         combinedMonths.push(formatMonthLabel(historicalRef[i].month));
         historicalData.push(historicalRef[i].quantity);
-        predictedData.push(null);
+        if (i === historicalRef.length - 1) {
+          predictedData.push(historicalRef[i].quantity);
+        } else {
+          predictedData.push(null);
+        }
       }
     }
 
@@ -880,8 +884,18 @@
             },
             pointBorderColor: '#ffffff',
             pointBorderWidth: 2,
-            pointRadius: 6,
-            pointHoverRadius: 9,
+            pointRadius: function(context) {
+              const histVal = predictionResult.historicalRef[context.dataIndex];
+              const predVal = context.raw;
+              if (histVal !== null && predVal !== null) return 0;
+              return 6;
+            },
+            pointHoverRadius: function(context) {
+              const histVal = predictionResult.historicalRef[context.dataIndex];
+              const predVal = context.raw;
+              if (histVal !== null && predVal !== null) return 0;
+              return 9;
+            },
             fill: true,
             tension: 0.35,
             order: 1
@@ -920,6 +934,15 @@
             bodyFont: { family: 'Inter', size: 13 },
             padding: 12,
             cornerRadius: 10,
+            filter: function(tooltipItem) {
+              if (tooltipItem.datasetIndex === 0) {
+                const histVal = predictionResult.historicalRef[tooltipItem.dataIndex];
+                if (histVal !== null && tooltipItem.raw !== null) {
+                  return false;
+                }
+              }
+              return true;
+            },
             callbacks: {
               afterLabel: function (context) {
                 if (context.datasetIndex === 0) {
