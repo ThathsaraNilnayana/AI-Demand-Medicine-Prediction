@@ -37,7 +37,7 @@ app.use(express.json());
 // they are what point at the current asset versions.
 const sendHtml = (file) => (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    res.sendFile(path.join(__dirname, file));
+    res.sendFile(path.join(__dirname, 'public', file));
 };
 app.get('/', sendHtml('index.html'));
 app.get('/index.html', sendHtml('index.html'));
@@ -62,8 +62,9 @@ const staticOpts = {
     etag: true,
     setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 };
-app.use('/css', express.static(path.join(__dirname, 'css'), staticOpts));
-app.use('/js', express.static(path.join(__dirname, 'js'), staticOpts));
+app.use('/css', express.static(path.join(__dirname, 'public', 'css'), staticOpts));
+app.use('/js', express.static(path.join(__dirname, 'public', 'js'), staticOpts));
+app.use('/images', express.static(path.join(__dirname, 'public', 'images'), staticOpts));
 
 // Request log for every API call - method, path, status and the error body
 // when one is returned. This is what makes "the upload doesn't work" a
