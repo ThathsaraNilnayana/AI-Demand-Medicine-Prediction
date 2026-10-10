@@ -38,83 +38,68 @@ function runPredictionEngine(monthlySeries, horizon = 12) {
  *   { status: 'ok', model_type, months_available, predictions: [...] }
  */
 async function generatePredictionForMedicine(medicineId) {
-    const medicine = await db.get('SELECT medicine_id FROM medicines WHERE medicine_id = ?', [medicineId]);
+    const medicine = await db.get('SELECT medicine_id, medicine_name FROM medicines WHERE medicine_id = ?', [medicineId]);
     if (!medicine) return { status: 'not_found' };
-
-    // Aggregate raw sales rows into monthly totals (the ML engine's expected input).
-    const monthlyRows = await db.all(`
-        SELECT strftime('%Y-%m', sale_date) as month, SUM(quantity_sold) as quantity
-        FROM sales_data
-        WHERE medicine_id = ?
-        GROUP BY month
-        ORDER BY month ASC
-    `, [medicineId]);
-
-    if (monthlyRows.length === 0) {
-        return {
-            status: 'insufficient_data',
-            months_available: 0,
-            minimum_required: 6,
-            error: 'No historical sales data available for this medicine'
-        };
-    }
-
-    const result = await runPredictionEngine(monthlyRows, 12);
-
-    if (result.status === 'error') return { status: 'error', error: result.error };
-    if (result.status === 'insufficient_data') return { ...result, status: 'insufficient_data' };
 
     const stockRow = await db.get('SELECT quantity FROM stock_levels WHERE medicine_id = ?', [medicineId]);
     const currentStock = stockRow ? stockRow.quantity : 0;
 
-    // Replace this medicine's cached forecast with the fresh one.
-    await db.run('DELETE FROM predictions WHERE medicine_id = ?', [medicineId]);
+    try {
+        const response = await fetch('http://127.0.0.1:5000/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                medicine_name: medicine.medicine_name,
+                current_stock: currentStock
+            })
+        });
 
-    const inserted = [];
-    for (const point of result.forecast) {
-        // Safety_Stock = Predicted_Demand * factor
-        // Recommended_Order = MAX(0, Predicted_Demand + Safety_Stock - Current_Stock)
-        const safetyStock = point.predicted_demand * config.safetyStockFactor;
-        const required = point.predicted_demand + safetyStock;
-        const recommendedOrderQty = Math.max(0, Math.round(required - currentStock));
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            if (response.status === 404) {
+                return {
+                    status: 'insufficient_data',
+                    months_available: 0,
+                    minimum_required: 1,
+                    error: err.message || 'Medicine not found in ML model'
+                };
+            }
+            return { status: 'error', error: err.message || `Flask error: ${response.status}` };
+        }
 
-        // backtest_smape/loss/accuracy are per-generation-run metrics (one
-        // number for the whole medicine), not per-forecast-month - the same
-        // value is written to every row here, mirroring how model_type is
-        // already denormalized across the 12 rows. This is what lets a
-        // cached prediction (the common case - most medicines aren't
-        // re-trained on every page view) still show these metrics without
-        // re-running the ML engine.
+        const result = await response.json();
+
+        // Replace this medicine's cached forecast with the fresh one.
+        await db.run('DELETE FROM predictions WHERE medicine_id = ?', [medicineId]);
+
+        // forecast_month is returned as "YYYY-MM", database expects full date "YYYY-MM-DD"
+        const prediction_month = `${result.forecast_month}-01`;
+
         const insertResult = await db.run(`
             INSERT INTO predictions (medicine_id, prediction_month, predicted_demand, recommended_order_qty, confidence_score, model_type, backtest_smape, loss_mae, accuracy_pct)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [medicineId, `${point.month}-01`, point.predicted_demand, recommendedOrderQty, point.confidence_score, result.model_type, result.backtest_smape, result.loss, result.accuracy]);
+        `, [medicineId, prediction_month, result.predicted_demand, result.reorder_quantity, 1.0, 'Custom Flask Model', null, null, null]);
 
-        inserted.push({
-            id: insertResult.lastID,
-            ...point,
-            recommended_order_qty: recommendedOrderQty,
-            model_type: result.model_type
-        });
+        return {
+            status: 'ok',
+            model_type: 'Custom Flask Model',
+            months_available: 1,
+            months_observed: 1,
+            backtest_smape: null,
+            loss: null,
+            accuracy: null,
+            predictions: [{
+                id: insertResult.lastID,
+                month: result.forecast_month,
+                predicted_demand: result.predicted_demand,
+                recommended_order_qty: result.reorder_quantity,
+                confidence_score: 1.0,
+                model_type: 'Custom Flask Model'
+            }]
+        };
+    } catch (e) {
+        return { status: 'error', error: `Failed to connect to ML model server: ${e.message}` };
     }
-
-    return {
-        status: 'ok',
-        model_type: result.model_type,
-        months_available: result.months_available,
-        // Distinct months actually present vs the gap-filled span the model
-        // saw. When these differ the medicine has missing months, which is
-        // worth surfacing rather than hiding.
-        months_observed: result.months_observed,
-        // Measured out-of-sample error (sMAPE %). null when the series is too
-        // short to hold anything out. This is what the confidence scores are
-        // derived from, so it belongs in the response.
-        backtest_smape: result.backtest_smape,
-        // Training metrics
-        loss: result.loss,  // Mean Absolute Error from validation folds
-        accuracy: result.accuracy,  // % of predictions within 20% of actual
-        predictions: inserted
-    };
 }
 
 /**
