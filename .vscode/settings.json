@@ -2,5 +2,6 @@
     "liveServer.settings.port": 5501,
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "workbench.iconTheme": "material-icon-theme"
 }
