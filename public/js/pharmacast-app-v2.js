@@ -4363,8 +4363,39 @@
     trainOnDataset,
     closeAiTrainingModal,
     finishAiTraining,
-    toggleMyLocationSharing
+    toggleMyLocationSharing,
+    togglePasswordVisibility,
+    quickFillLogin
   };
+
+  function togglePasswordVisibility(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPass = input.type === 'password';
+    input.type = isPass ? 'text' : 'password';
+    const icon = btnEl ? btnEl.querySelector('i') : null;
+    if (icon) {
+      icon.className = isPass ? 'bi bi-eye-slash text-emerald' : 'bi bi-eye text-muted';
+    }
+  }
+
+  function quickFillLogin(username, password) {
+    const u = document.getElementById('login-username');
+    const p = document.getElementById('login-password');
+    if (u) {
+      u.value = username;
+      u.classList.add('input-highlight-pulse');
+      setTimeout(() => u.classList.remove('input-highlight-pulse'), 1200);
+    }
+    if (p) {
+      p.value = password;
+      p.classList.add('input-highlight-pulse');
+      setTimeout(() => p.classList.remove('input-highlight-pulse'), 1200);
+    }
+    const submitBtn = document.getElementById('login-submit-btn');
+    if (submitBtn) submitBtn.focus();
+    showToastNotification(`Autofilled demo credentials for "${username}"`, "info");
+  }
 
   /* ─── iOS navbar behaviours ───
      1. The bar becomes more opaque once the page scrolls away from the top,
