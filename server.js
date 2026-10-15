@@ -59,8 +59,12 @@ app.get('/admin.html', sendHtml('admin.html'));
 // an empty body, so the bandwidth saving is kept while correctness is
 // restored: a deploy is picked up on the next page load, every time.
 const staticOpts = {
-    etag: true,
-    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
+    etag: false,
+    setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
 };
 app.use('/css', express.static(path.join(__dirname, 'public', 'css'), staticOpts));
 app.use('/js', express.static(path.join(__dirname, 'public', 'js'), staticOpts));
