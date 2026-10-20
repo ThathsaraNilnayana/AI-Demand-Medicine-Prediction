@@ -42,6 +42,9 @@ const sendHtml = (file) => (req, res) => {
 app.get('/', sendHtml('index.html'));
 app.get('/index.html', sendHtml('index.html'));
 app.get('/admin.html', sendHtml('admin.html'));
+app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon.ico')));
+app.get('/favicon.svg', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon.svg')));
+app.get('/favicon.png', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon.png')));
 
 // This used to be `{ maxAge: '1d', etag: true }`, with a comment claiming
 // express.static "still revalidates on" the ETag. It does not. A fresh
