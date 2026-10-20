@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
 import joblib
+import os
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -9,8 +10,10 @@ warnings.filterwarnings('ignore')
 app = Flask(__name__)
 CORS(app)
 
-# 1. Saved model එක load කිරීම (Model_1_updated.ipynb මගින් හදන file එක)
-artifacts = joblib.load('medicine_demand_model.pkl')
+# 1. Saved model load
+MODEL_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_FILE = os.path.join(MODEL_DIR, 'medicine_demand_model.pkl')
+artifacts = joblib.load(MODEL_FILE)
 final_model = artifacts['model']
 poly_transformer = artifacts['poly_transformer']
 feature_columns = artifacts['feature_columns']
