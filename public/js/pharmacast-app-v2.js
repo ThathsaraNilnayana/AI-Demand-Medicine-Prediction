@@ -510,12 +510,16 @@
   }
 
   /** Aggregates raw /api/sales/:id rows into up to the last 12 monthly totals,
-   *  oldest first, for the chart's "Actual Historical Sales" reference line. */
+   *  oldest first, for the chart's "Actual Historical Sales" reference line.
+   *  Strictly limits data to past/current months (key <= currentMonthKey). */
   function aggregateLast12MonthlyTotals(saleRows) {
+    const currentMonthKey = new Date().toISOString().slice(0, 7);
     const totals = new Map();
-    for (const row of saleRows) {
+    for (const row of (saleRows || [])) {
       const key = String(row.sale_date).slice(0, 7);
-      totals.set(key, (totals.get(key) || 0) + Number(row.quantity_sold || 0));
+      if (key && key <= currentMonthKey) {
+        totals.set(key, (totals.get(key) || 0) + Number(row.quantity_sold || 0));
+      }
     }
     const months = Array.from(totals.keys()).sort();
     const last12 = months.slice(-12);
@@ -528,18 +532,31 @@
   function adaptServerPrediction(forecast, modelType, historicalRef) {
     const combinedMonths = [];
     const predictedData = [];
-    const historicalData = [];
+    let historicalData = [];
+
+    const currentMonthKey = new Date().toISOString().slice(0, 7);
+    const firstForecastMonth = (forecast && forecast.length > 0 && forecast[0].month)
+      ? String(forecast[0].month).slice(0, 7)
+      : null;
+
+    // Filter historicalRef strictly: must not be in the future, and must not overlap or exceed the first forecast month
+    const validHistorical = (historicalRef || []).filter((h) => {
+      const m = String(h.month).slice(0, 7);
+      if (m > currentMonthKey) return false;
+      if (firstForecastMonth && m >= firstForecastMonth) return false;
+      return true;
+    });
 
     // 1. Plot the chronological historical months FIRST
-    if (historicalRef && historicalRef.length > 0) {
-      for (let i = 0; i < historicalRef.length; i++) {
-        combinedMonths.push(formatMonthLabel(historicalRef[i].month));
-        historicalData.push(historicalRef[i].quantity);
+    if (validHistorical.length > 0) {
+      for (let i = 0; i < validHistorical.length; i++) {
+        combinedMonths.push(formatMonthLabel(validHistorical[i].month));
+        historicalData.push(validHistorical[i].quantity);
         
         // Connector point: to make the line continuous, the green line starts exactly
         // where the historical line ends.
-        if (i === historicalRef.length - 1) {
-          predictedData.push(historicalRef[i].quantity);
+        if (i === validHistorical.length - 1) {
+          predictedData.push(validHistorical[i].quantity);
         } else {
           predictedData.push(null);
         }
@@ -547,19 +564,19 @@
     }
 
     // 2. Plot the chronological future predicted months NEXT
-    for (const f of forecast) {
+    for (const f of (forecast || [])) {
       combinedMonths.push(formatMonthLabel(f.month));
       historicalData.push(null);
       predictedData.push(f.predicted_demand);
     }
 
-    if (!historicalRef || historicalRef.length === 0) {
+    if (validHistorical.length === 0) {
       historicalData = predictedData.map(() => null);
     }
 
-    const futurePredicted = forecast.map((f) => f.predicted_demand);
+    const futurePredicted = (forecast || []).map((f) => f.predicted_demand);
     const averagePredicted = Math.round(futurePredicted.reduce((a, b) => a + b, 0) / (futurePredicted.length || 1));
-    const avgConfidence = forecast.reduce((a, f) => a + (f.confidence_score || 0), 0) / (forecast.length || 1);
+    const avgConfidence = (forecast || []).reduce((a, f) => a + (f.confidence_score || 0), 0) / ((forecast && forecast.length) || 1);
 
     return {
       status: "SUCCESS",

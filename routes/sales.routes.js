@@ -134,6 +134,7 @@ router.get('/trainable', requireAuth, requireRole('admin', 'pharmacist'), async 
                    COUNT(DISTINCT strftime('%Y-%m', s.sale_date)) AS months
             FROM sales_data s
             JOIN medicines m ON m.medicine_id = s.medicine_id
+            WHERE s.sale_date <= CURRENT_DATE
             GROUP BY s.medicine_id, m.medicine_name, m.dosage
             ORDER BY months DESC, m.medicine_name
         `);
@@ -151,12 +152,13 @@ router.get('/trainable', requireAuth, requireRole('admin', 'pharmacist'), async 
     } catch (err) { next(err); }
 });
 
-// GET sales history for a medicine (unchanged shape)
+// GET sales history for a medicine (strictly historical, never future)
 router.get('/:medicineId', async (req, res, next) => {
     try {
         const rows = await db.all(`
             SELECT * FROM sales_data
             WHERE medicine_id = ?
+              AND sale_date <= CURRENT_DATE
             ORDER BY sale_date DESC
         `, [req.params.medicineId]);
         res.json(rows);
@@ -169,7 +171,13 @@ router.post('/',
     [
         body('medicine_id').isInt().withMessage('medicine_id is required'),
         body('quantity_sold').isInt({ min: 1 }).withMessage('quantity_sold must be a positive integer'),
-        body('sale_date').isISO8601().withMessage('sale_date must be YYYY-MM-DD')
+        body('sale_date').isISO8601().withMessage('sale_date must be YYYY-MM-DD').custom(val => {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            if (val.slice(0, 10) > todayStr) {
+                throw new Error('sale_date cannot be in the future');
+            }
+            return true;
+        })
     ],
     validate,
     async (req, res, next) => {
@@ -280,6 +288,11 @@ router.post('/upload', requireAuth, requireRole('admin', 'pharmacist'), handleUp
                 rowErrors.push(row.date
                     ? `unrecognised date "${row.date}" (use YYYY-MM-DD)`
                     : 'missing date');
+            } else {
+                const todayStr = new Date().toISOString().slice(0, 10);
+                if (saleDate > todayStr) {
+                    rowErrors.push(`sale date "${saleDate}" cannot be in the future`);
+                }
             }
 
             const quantity = Number(row.quantity);
