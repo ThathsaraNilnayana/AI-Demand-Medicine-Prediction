@@ -4361,11 +4361,9 @@
     submitCustomCsvData,
     trainModelWithDataset,
     trainOnDataset,
-    closeAiTrainingModal,
     finishAiTraining,
     toggleMyLocationSharing,
-    togglePasswordVisibility,
-    quickFillLogin
+    togglePasswordVisibility
   };
 
   function togglePasswordVisibility(inputId, btnEl) {
@@ -4377,24 +4375,6 @@
     if (icon) {
       icon.className = isPass ? 'bi bi-eye-slash text-emerald' : 'bi bi-eye text-muted';
     }
-  }
-
-  function quickFillLogin(username, password) {
-    const u = document.getElementById('login-username');
-    const p = document.getElementById('login-password');
-    if (u) {
-      u.value = username;
-      u.classList.add('input-highlight-pulse');
-      setTimeout(() => u.classList.remove('input-highlight-pulse'), 1200);
-    }
-    if (p) {
-      p.value = password;
-      p.classList.add('input-highlight-pulse');
-      setTimeout(() => p.classList.remove('input-highlight-pulse'), 1200);
-    }
-    const submitBtn = document.getElementById('login-submit-btn');
-    if (submitBtn) submitBtn.focus();
-    showToastNotification(`Autofilled demo credentials for "${username}"`, "info");
   }
 
   /* ─── iOS navbar behaviours ───

@@ -16,20 +16,13 @@
   <!-- Leaflet CSS - powers the "My Location" dashboard map (js/pharmacast-app.js) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 
+  <!-- Cache-Control Meta Tags -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
   <!-- Custom Luxury Natural Medicine CSS -->
-  <!-- ?v= is a cache-buster.
-       Bumped to 20260812b: the previous value (20260811) shipped in the SAME
-       deploy that introduced `Cache-Control: no-cache` in server.js, so any
-       browser that loaded the site during that window stored that exact URL
-       under the OLD `max-age=1d` header and will not revalidate it for a full
-       day - it kept serving stale CSS/JS even though the server had already
-       switched to no-cache. Changing the query string is the only way to
-       reach those browsers, because a cached entry with a live max-age is
-       never re-requested.
-       From here on the server sends no-cache on every css/js response, so
-       this value should not need bumping again; if a stale-asset problem ever
-       reappears, bumping it is the immediate remedy. -->
-  <link rel="stylesheet" href="css/pharmacast-luxury.css?v=20261015-creative-auth" />
+  <link rel="stylesheet" href="css/pharmacast-luxury.css?v=20261020-no-demo" />
 </head>
 <body>
 
@@ -1457,7 +1450,7 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- Core App Logic & ML Forecasting Engine -->
-  <script src="js/pharmacast-app-v2.js?v=20261015-creative-auth"></script>
+  <script src="js/pharmacast-app-v2.js?v=20261020-no-demo"></script>
 
   <!-- Custom DNA Canvas Animation -->
   <script>
