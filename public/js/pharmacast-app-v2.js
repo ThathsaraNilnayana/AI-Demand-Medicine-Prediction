@@ -4361,6 +4361,7 @@
     submitCustomCsvData,
     trainModelWithDataset,
     trainOnDataset,
+    closeAiTrainingModal,
     finishAiTraining,
     toggleMyLocationSharing,
     togglePasswordVisibility
